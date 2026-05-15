@@ -17,13 +17,15 @@ Pi may forward this prompt/context to the model provider configured in your Pi s
 
 ## Network use
 
-The plugin itself does not call model-provider APIs directly. Network use happens through the Pi CLI and depends on your Pi provider/model configuration.
+The plugin itself does not call model-provider APIs directly and does not include telemetry. Network use happens through the Pi CLI and depends on your Pi provider/model configuration.
 
 ## Local storage
 
 The plugin stores settings and trimmed chat history in Obsidian plugin data. Pi session files are written under the plugin directory during local runs. These runtime files are ignored by git.
 
 ## File and shell access
+
+The plugin can read Pi configuration and skill files outside the vault from Pi's global and project locations, including `~/.pi/agent`, `~/.agents/skills`, vault/project `.pi/` and `.agents/` folders, and any additional skill folders you configure. This is used to discover Pi defaults, available skills, and model settings.
 
 Tool modes control which Pi CLI tools are enabled:
 

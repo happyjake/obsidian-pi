@@ -50,8 +50,10 @@ Pi Agent can send note content and selected text to the local Pi CLI, which may 
 
 Short version:
 
+- The plugin does not include ads, telemetry, or an auto-updater.
 - Chat history and Pi sessions are stored locally by the plugin and Pi.
-- Network access depends on your Pi/model-provider configuration.
+- Network access happens through the separately installed Pi CLI and depends on your Pi/model-provider configuration.
+- The plugin reads Pi configuration and skill files from Pi's global and vault/project locations, including `~/.pi/agent`, `~/.agents/skills`, `.pi/`, `.agents/`, and any additional skill folders you configure.
 - Edit and Full agent modes can modify files in your vault/project.
 - Full agent mode can run shell commands through Pi.
 - Skills can contain instructions or scripts; only enable skill folders you trust.
