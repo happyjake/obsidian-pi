@@ -6,7 +6,9 @@ on:
       - "*.*.*"
 
 permissions:
+  attestations: write
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -27,15 +29,20 @@ jobs:
       - name: Run quality gates
         run: npm run ci
 
-      - name: Build release zip
-        run: npm run release:zip
+      - name: Generate artifact attestations
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          body_path: CHANGELOG.md
           files: |
             main.js
             manifest.json
             styles.css
-            pi-agent-${{ github.ref_name }}.zip
           fail_on_unmatched_files: true

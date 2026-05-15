@@ -105,7 +105,6 @@ See [docs/development.md](docs/development.md) and [docs/architecture.md](docs/a
 
 ```bash
 npm run ci
-npm run release:zip
 ```
 
 3. Commit the release prep.
@@ -116,9 +115,8 @@ git tag 0.0.1
 git push origin 0.0.1
 ```
 
-The release workflow publishes:
+The release workflow publishes the Obsidian-supported assets and generates artifact attestations:
 
 - `main.js`
 - `manifest.json`
 - `styles.css`
-- `pi-agent-<version>.zip`

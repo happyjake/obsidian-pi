@@ -33,7 +33,6 @@ Then reload Obsidian, or disable and re-enable the plugin.
 
 ```bash
 npm run ci
-npm run release:zip
 ```
 
 4. Commit the release prep:
@@ -53,11 +52,10 @@ git tag 0.0.2
 git push origin 0.0.2
 ```
 
-The GitHub Actions release workflow creates a GitHub release and uploads:
+The GitHub Actions release workflow creates a GitHub release, uploads the Obsidian-supported assets, and generates artifact attestations:
 
 - `main.js`
 - `manifest.json`
 - `styles.css`
-- `pi-agent-<version>.zip`
 
-For Obsidian Community Plugins, GitHub release assets are what users receive when they install or update the plugin.
+For Obsidian Community Plugins, GitHub release assets are what users receive when they install or update the plugin. Do not attach extra files to the GitHub release; Obsidian only supports the assets above.
