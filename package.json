@@ -6,8 +6,8 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "build:check": "node scripts/build.mjs --check",
-    "format": "prettier --write AGENTS.md main.js styles.css src/**/*.js src/**/*.mjs tests/**/*.mjs scripts/*.mjs docs/*.md *.md *.json .github/workflows/*.yml",
-    "format:check": "prettier --check AGENTS.md main.js styles.css src/**/*.js src/**/*.mjs tests/**/*.mjs scripts/*.mjs docs/*.md *.md *.json .github/workflows/*.yml",
+    "format": "prettier --write --no-error-on-unmatched-pattern AGENTS.md main.js styles.css src/**/*.js src/**/*.mjs tests/**/*.mjs scripts/*.mjs docs/*.md *.md *.json .github/workflows/*.yml",
+    "format:check": "prettier --check --no-error-on-unmatched-pattern AGENTS.md main.js styles.css src/**/*.js src/**/*.mjs tests/**/*.mjs scripts/*.mjs docs/*.md *.md *.json .github/workflows/*.yml",
     "lint": "eslint src scripts tests",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
