@@ -32,9 +32,10 @@ function findPiNodeExecutable() {
   const root = path.join(home, ".local", "share", "pi-node");
 
   try {
-    const versions = fs.readdirSync(root, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => path.join(root, d.name));
+    const versions = fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => path.join(root, d.name));
 
     for (const v of versions) {
       const candidate = path.join(v, "bin", "pi");
@@ -73,9 +74,10 @@ function getPiNodePaths() {
   const root = path.join(home, ".local", "share", "pi-node");
 
   try {
-    return fs.readdirSync(root, { withFileTypes: true })
-      .filter(d => d.isDirectory())
-      .map(d => path.join(root, d.name, "bin"));
+    return fs
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => path.join(root, d.name, "bin"));
   } catch {
     return [];
   }

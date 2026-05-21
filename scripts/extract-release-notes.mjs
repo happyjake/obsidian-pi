@@ -6,7 +6,10 @@ const outputPath = process.argv[2] ?? "release-notes.md";
 const version = manifest.version;
 
 const escapedVersion = version.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-const headingPattern = new RegExp(`^##\\s+\\[?${escapedVersion}\\]?(?:\\s+-\\s+.*)?\\s*$`, "m");
+const headingPattern = new RegExp(
+  `^##[ \t]+\\[?${escapedVersion}\\]?(?:[ \t]+-[ \t]+.*)?[ \t]*$`,
+  "m"
+);
 const headingMatch = changelog.match(headingPattern);
 
 if (!headingMatch || headingMatch.index === undefined) {

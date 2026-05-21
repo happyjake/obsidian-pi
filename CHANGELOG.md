@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.4
+
+- Added support for finding Pi CLI installations that use the `pi-node` launcher on Ubuntu/Debian systems. Thanks @Hatekaharja! (#10)
+
 ## 0.0.3
 
 - Simplified context settings by removing user-facing numeric context/change tracking limits and keeping ignored folders/directories as the visible context/file-access control. (#3)
