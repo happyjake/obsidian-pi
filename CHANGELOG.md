@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.0.5
+
+- Added a Pi executable path setting so custom installs such as nix-darwin can point Obsidian directly at the Pi CLI. (#15, #16)
+
 ## 0.0.4
 
 - Added support for finding Pi CLI installations that use the `pi-node` launcher on Ubuntu/Debian systems. Thanks @Hatekaharja! (#10)
