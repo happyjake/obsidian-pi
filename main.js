@@ -5685,6 +5685,7 @@ var PiAgentPlugin = class extends P.Plugin {
       this.rebuildServices(),
       this.settings.dryRun ||
         warmupPiCli(this.settings.piExecutablePath, this.getPluginDirectory()),
+      this.refreshModelCatalog(false),
       this.refreshCurrentContextFile(),
       this.registerEvent(
         this.app.workspace.on("file-open", (e) => {
