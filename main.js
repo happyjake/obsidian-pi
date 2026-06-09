@@ -3427,123 +3427,18 @@ function formatThreadDate(e) {
 // src/ui/vault-link-actions.mjs
 var vault_link_actions_exports = {};
 __export(vault_link_actions_exports, {
-  createChatLink: () => createChatLink,
   formatVaultLinkTarget: () => formatVaultLinkTarget,
   getLinkLabel: () => getLinkLabel,
   getLinkSourcePath: () => getLinkSourcePath,
   getVaultBasePath: () => getVaultBasePath,
-  isExternalLinkTarget: () => isExternalLinkTarget,
   normalizeVaultPath: () => normalizeVaultPath,
-  openExternalUrl: () => openExternalUrl,
   openVaultLink: () => openVaultLink,
   openVaultPath: () => openVaultPath,
   parseVaultLinkTarget: () => parseVaultLinkTarget,
   resolveDirectVaultFile: () => resolveDirectVaultFile,
-  revealLine: () => revealLine,
-  showExternalLinkMenu: () => showExternalLinkMenu,
-  showVaultLinkMenu: () => showVaultLinkMenu
+  revealLine: () => revealLine
 });
 var f3 = __toESM(require("obsidian"), 1);
-function createChatLink(e, t) {
-  let n = document.createElement("a");
-  return (
-    n.addClass("pi-agent-vault-link"),
-    n.setText(e),
-    this.isExternalLinkTarget(t)
-      ? (n.setAttr("href", t.url), n.setAttr("title", t.url))
-      : (n.setAttr("href", "#"), n.setAttr("title", this.formatVaultLinkTarget(t))),
-    n.addEventListener("click", (s) => {
-      if ((s.preventDefault(), s.stopPropagation(), this.isExternalLinkTarget(t))) {
-        this.openExternalUrl(t.url);
-        return;
-      }
-      let a = s.metaKey || s.ctrlKey ? "tab" : false;
-      this.openVaultLink(t, a);
-    }),
-    n.addEventListener("contextmenu", (s) => {
-      if ((s.preventDefault(), s.stopPropagation(), this.isExternalLinkTarget(t))) {
-        this.showExternalLinkMenu(s, t.url);
-        return;
-      }
-      this.showVaultLinkMenu(s, t);
-    }),
-    n
-  );
-}
-function isExternalLinkTarget(e) {
-  return "url" in e;
-}
-function showExternalLinkMenu(e, t) {
-  let n = new f3.Menu();
-  (n.addItem((s) =>
-    s
-      .setTitle("Open link")
-      .setIcon("external-link")
-      .onClick(() => this.openExternalUrl(t))
-  ),
-    n.addItem((s) =>
-      s
-        .setTitle("Copy link")
-        .setIcon("copy")
-        .onClick(() => {
-          var a;
-          (a = this.noteActions) == null ? void 0 : a.copyText(t);
-        })
-    ),
-    n.showAtMouseEvent(e));
-}
-function openExternalUrl(e) {
-  var s, a, o;
-  let t = window,
-    n =
-      (o =
-        (a = (s = t.require) == null ? void 0 : s.call(t, "electron")) == null
-          ? void 0
-          : a.shell) == null
-        ? void 0
-        : o.openExternal;
-  if (n) {
-    n(e);
-    return;
-  }
-  window.open(e, "_blank", "noopener");
-}
-function showVaultLinkMenu(e, t) {
-  let n = new f3.Menu();
-  (n.addItem((s) =>
-    s
-      .setTitle("Open")
-      .setIcon("file")
-      .onClick(() => {
-        this.openVaultLink(t, false);
-      })
-  ),
-    n.addItem((s) =>
-      s
-        .setTitle("Open in new tab")
-        .setIcon("lucide-panel-top-open")
-        .onClick(() => {
-          this.openVaultLink(t, "tab");
-        })
-    ),
-    n.addItem((s) =>
-      s
-        .setTitle("Open in split")
-        .setIcon("separator-vertical")
-        .onClick(() => {
-          this.openVaultLink(t, "split");
-        })
-    ),
-    n.addItem((s) =>
-      s
-        .setTitle("Open in new window")
-        .setIcon("picture-in-picture-2")
-        .onClick(() => {
-          this.openVaultLink(t, "window");
-        })
-    ),
-    n.showAtMouseEvent(e));
-}
 async function openVaultLink(e, t = false) {
   var h, u, g;
   let n = typeof e == "string" ? this.parseVaultLinkTarget(e) : e;
