@@ -559,15 +559,22 @@ export class PiAgentPlugin extends P.Plugin {
     return [...n].filter(Boolean).slice(0, 6);
   }
   getEditorSelection() {
-    var s;
+    return this.getEditorSelectionContext()?.text ?? "";
+  }
+  getEditorSelectionContext() {
+    var s, a;
     this.cacheCurrentEditorSelection({ allowClear: false });
     let e = this.app.workspace.activeEditor,
       t = e == null ? void 0 : e.editor,
-      n = (s = t == null ? void 0 : t.getSelection()) != null ? s : "";
-    if (n) return n;
-    let a = this.currentContextFile ?? this.app.workspace.getActiveFile(),
-      o = this.cachedEditorSelection;
-    return o && a?.path === o.path && Date.now() - o.updatedAt < 6e5 ? o.text : "";
+      n = (s = e == null ? void 0 : e.file) != null ? s : this.app.workspace.getActiveFile(),
+      o = (a = t == null ? void 0 : t.getSelection()) != null ? a : "";
+    if (o && n?.extension === "md")
+      return { path: n.path, text: o, updatedAt: Date.now(), cached: false };
+    let l = this.currentContextFile ?? this.app.workspace.getActiveFile(),
+      d = this.cachedEditorSelection;
+    return d && l?.path === d.path && Date.now() - d.updatedAt < 6e5
+      ? { ...d, cached: true }
+      : undefined;
   }
   cacheCurrentEditorSelection(e = {}) {
     var l;
@@ -596,8 +603,8 @@ export class PiAgentPlugin extends P.Plugin {
     return e && !e.isCollapsed && !this.isNodeInsidePiAgentView(t) ? e.toString() : "";
   }
   isNodeInsidePiAgentView(e) {
-    let t = e instanceof Element ? e : e?.parentElement;
-    return t instanceof Element && !!t.closest(".pi-agent-view");
+    let t = e && typeof e.closest === "function" ? e : e?.parentElement;
+    return !!(t && typeof t.closest === "function" && t.closest(".pi-agent-view"));
   }
   getVaultBasePath() {
     var t;

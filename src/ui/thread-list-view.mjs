@@ -19,6 +19,7 @@ export function renderThreadList() {
     (this.composerBarExpandEl = void 0),
     (this.runSettings = void 0),
     (this.toolBadgesEl = void 0),
+    (this.selectionPreviewEl = void 0),
     (this.threadTitleEl = void 0),
     e.empty(),
     e.addClass("pi-agent-view"));

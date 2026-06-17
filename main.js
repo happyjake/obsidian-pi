@@ -3258,6 +3258,7 @@ function renderThreadList() {
     (this.composerBarExpandEl = void 0),
     (this.runSettings = void 0),
     (this.toolBadgesEl = void 0),
+    (this.selectionPreviewEl = void 0),
     (this.threadTitleEl = void 0),
     e.empty(),
     e.addClass("pi-agent-view"));
@@ -4514,14 +4515,17 @@ var PiAgentView = class extends f5.ItemView {
       (this.syncCurrentRunFlags(),
         e.key !== "Escape" || !this.running || (e.preventDefault(), this.cancelCurrentRun()));
     });
+    this.registerDomEvent(document, "selectionchange", () => {
+      window.setTimeout(() => this.renderSelectionPreview(), 0);
+    });
     this.registerEvent(
       this.plugin.app.workspace.on("file-open", () => {
-        this.renderToolBadges();
+        (this.renderToolBadges(), this.renderSelectionPreview());
       })
     );
     this.registerEvent(
       this.plugin.app.workspace.on("active-leaf-change", () => {
-        this.renderToolBadges();
+        (this.renderToolBadges(), this.renderSelectionPreview());
       })
     );
     this.registerEvent(
@@ -4650,6 +4654,8 @@ var PiAgentView = class extends f5.ItemView {
     let d = e.createDiv({ cls: "pi-agent-composer" });
     ((this.toolBadgesEl = d.createDiv({ cls: "pi-agent-tool-badges" })),
       this.renderToolBadges(),
+      (this.selectionPreviewEl = d.createDiv({ cls: "pi-agent-selection-preview is-empty" })),
+      this.renderSelectionPreview(),
       (this.promptQueueEl = d.createDiv({ cls: "pi-agent-prompt-queue" })),
       this.renderPromptQueue(),
       (this.inputEl = d.createEl("textarea", {
@@ -4675,7 +4681,10 @@ var PiAgentView = class extends f5.ItemView {
       }),
       this.inputEl.addEventListener("click", () => {
         var c;
-        return (c = this.suggestions) == null ? void 0 : c.update();
+        (this.renderSelectionPreview(), (c = this.suggestions) == null || c.update());
+      }),
+      this.inputEl.addEventListener("focus", () => {
+        this.renderSelectionPreview();
       }),
       this.inputEl.addEventListener("blur", () => {
         window.setTimeout(() => {
@@ -4713,6 +4722,7 @@ var PiAgentView = class extends f5.ItemView {
       (this.composerBarExpandEl = void 0),
       (this.runSettings = void 0),
       (this.toolBadgesEl = void 0),
+      (this.selectionPreviewEl = void 0),
       (this.threadTitleEl = void 0),
       this.cleanupComposerBarObserver(),
       this.clearPendingActivityTimer(),
@@ -4741,6 +4751,37 @@ var PiAgentView = class extends f5.ItemView {
       attr: { title: n.title }
     });
     this.renderToolBadgesContextUsage(e);
+  }
+  renderSelectionPreview() {
+    let e = this.selectionPreviewEl;
+    if (!e) return;
+    e.empty();
+    let t = this.plugin.getEditorSelectionContext?.();
+    if (!t?.text?.trim()) {
+      (e.addClass("is-empty"), e.removeClass("is-cached"), e.removeAttribute("title"));
+      return;
+    }
+    (e.removeClass("is-empty"), e.toggleClass("is-cached", t.cached === true));
+    let n = this.formatSelectionPreviewText(t.text),
+      s = this.formatSelectionPreviewMeta(t),
+      a = t.text.length > 1e3 ? `${t.text.slice(0, 997)}...` : t.text;
+    e.setAttr("title", [t.path, a].filter(Boolean).join("\n"));
+    let o = e.createDiv({ cls: "pi-agent-selection-preview-header" });
+    (o.createSpan({
+      cls: "pi-agent-selection-preview-label",
+      text: t.cached ? "Selection cached" : "Selection attached"
+    }),
+      s && o.createSpan({ cls: "pi-agent-selection-preview-meta", text: s }),
+      e.createDiv({ cls: "pi-agent-selection-preview-text", text: n }));
+  }
+  formatSelectionPreviewMeta(e) {
+    var n;
+    let t = (n = e.path) == null ? void 0 : n.split("/").pop();
+    return [t, `${e.text.length} chars`].filter(Boolean).join(" - ");
+  }
+  formatSelectionPreviewText(e) {
+    let t = String(e || "").trim();
+    return t.length > 280 ? `${t.slice(0, 277)}...` : t;
   }
   renderToolBadgesContextUsage(e) {
     let t = this.getDisplayedContextUsage(),
@@ -5980,15 +6021,22 @@ var PiAgentPlugin = class extends P.Plugin {
     return [...n].filter(Boolean).slice(0, 6);
   }
   getEditorSelection() {
-    var s;
+    return this.getEditorSelectionContext()?.text ?? "";
+  }
+  getEditorSelectionContext() {
+    var s, a;
     this.cacheCurrentEditorSelection({ allowClear: false });
     let e = this.app.workspace.activeEditor,
       t = e == null ? void 0 : e.editor,
-      n = (s = t == null ? void 0 : t.getSelection()) != null ? s : "";
-    if (n) return n;
-    let a = this.currentContextFile ?? this.app.workspace.getActiveFile(),
-      o = this.cachedEditorSelection;
-    return o && a?.path === o.path && Date.now() - o.updatedAt < 6e5 ? o.text : "";
+      n = (s = e == null ? void 0 : e.file) != null ? s : this.app.workspace.getActiveFile(),
+      o = (a = t == null ? void 0 : t.getSelection()) != null ? a : "";
+    if (o && n?.extension === "md")
+      return { path: n.path, text: o, updatedAt: Date.now(), cached: false };
+    let l = this.currentContextFile ?? this.app.workspace.getActiveFile(),
+      d = this.cachedEditorSelection;
+    return d && l?.path === d.path && Date.now() - d.updatedAt < 6e5
+      ? { ...d, cached: true }
+      : void 0;
   }
   cacheCurrentEditorSelection(e = {}) {
     var l;
@@ -6017,8 +6065,8 @@ var PiAgentPlugin = class extends P.Plugin {
     return e && !e.isCollapsed && !this.isNodeInsidePiAgentView(t) ? e.toString() : "";
   }
   isNodeInsidePiAgentView(e) {
-    let t = e instanceof Element ? e : e?.parentElement;
-    return t instanceof Element && !!t.closest(".pi-agent-view");
+    let t = e && typeof e.closest === "function" ? e : e?.parentElement;
+    return !!(t && typeof t.closest === "function" && t.closest(".pi-agent-view"));
   }
   getVaultBasePath() {
     var t;
