@@ -100,6 +100,7 @@ export class PiAgentPlugin extends P.Plugin {
     this.messages = [];
     this.threadHistory = new ThreadStore();
     this.dataSaveChain = Promise.resolve();
+    this.cachedEditorSelection = undefined;
   }
   async onload() {
     await this.loadSettings();
@@ -118,6 +119,10 @@ export class PiAgentPlugin extends P.Plugin {
 
     this.refreshModelCatalog(false);
     this.refreshCurrentContextFile();
+    this.cacheCurrentEditorSelection({ allowClear: false });
+    this.registerDomEvent(document, "selectionchange", () => {
+      this.cacheCurrentEditorSelection({ allowClear: true });
+    });
 
     this.registerEvent(
       this.app.workspace.on("file-open", (e) => {
@@ -482,7 +487,9 @@ export class PiAgentPlugin extends P.Plugin {
     this.setCurrentContextFile(this.app.workspace.getActiveFile());
   }
   setCurrentContextFile(e) {
-    this.currentContextFile = e && e.extension === "md" ? e : void 0;
+    let t = e && e.extension === "md" ? e : void 0;
+    if (this.currentContextFile?.path !== t?.path) this.clearCachedEditorSelection();
+    this.currentContextFile = t;
   }
   runWithActiveMarkdownNote(e, t) {
     let n = this.app.workspace.getActiveFile(),
@@ -552,10 +559,45 @@ export class PiAgentPlugin extends P.Plugin {
     return [...n].filter(Boolean).slice(0, 6);
   }
   getEditorSelection() {
-    var n;
+    var s;
+    this.cacheCurrentEditorSelection({ allowClear: false });
     let e = this.app.workspace.activeEditor,
-      t = e == null ? void 0 : e.editor;
-    return (n = t == null ? void 0 : t.getSelection()) != null ? n : "";
+      t = e == null ? void 0 : e.editor,
+      n = (s = t == null ? void 0 : t.getSelection()) != null ? s : "";
+    if (n) return n;
+    let a = this.currentContextFile ?? this.app.workspace.getActiveFile(),
+      o = this.cachedEditorSelection;
+    return o && a?.path === o.path && Date.now() - o.updatedAt < 6e5 ? o.text : "";
+  }
+  cacheCurrentEditorSelection(e = {}) {
+    var l;
+    if (this.isFocusInsidePiAgentView()) return;
+    let t = this.app.workspace.activeEditor,
+      n = t == null ? void 0 : t.editor,
+      s = (l = t == null ? void 0 : t.file) != null ? l : this.app.workspace.getActiveFile();
+    if (!s || s.extension !== "md") return;
+    let a = n?.getSelection() ?? "";
+    if (!a) a = this.getDocumentSelectionText();
+    if (a) {
+      this.cachedEditorSelection = { path: s.path, text: a, updatedAt: Date.now() };
+    } else if (e.allowClear !== false) {
+      this.clearCachedEditorSelection();
+    }
+  }
+  clearCachedEditorSelection() {
+    this.cachedEditorSelection = undefined;
+  }
+  isFocusInsidePiAgentView() {
+    return this.isNodeInsidePiAgentView(document.activeElement);
+  }
+  getDocumentSelectionText() {
+    let e = document.getSelection(),
+      t = e?.anchorNode;
+    return e && !e.isCollapsed && !this.isNodeInsidePiAgentView(t) ? e.toString() : "";
+  }
+  isNodeInsidePiAgentView(e) {
+    let t = e instanceof Element ? e : e?.parentElement;
+    return t instanceof Element && !!t.closest(".pi-agent-view");
   }
   getVaultBasePath() {
     var t;
