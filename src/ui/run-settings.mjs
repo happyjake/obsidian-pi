@@ -103,10 +103,21 @@ export class RunSettingsControls {
 
     buttonEl.addEventListener("click", async (event) => {
       event.preventDefault();
+      if ((this.plugin.settings.availableModels ?? []).length === 0) {
+        new Notice("Loading Pi models...");
+        await this.plugin.refreshModelCatalog(true);
+        this.refresh();
+      }
+      const currentOptions = getModelOptions(this.plugin.settings);
+      const { selectedValue: currentSelectedValue } = this.getRunSettingLabels(
+        name,
+        currentOptions,
+        this.plugin.settings.model
+      );
       const modal = new ModelPickerModal(
         this.plugin.app,
-        this.getModelPickerItems(options),
-        selectedValue,
+        this.getModelPickerItems(currentOptions),
+        currentSelectedValue,
         async (optionValue) => {
           await onChange(optionValue);
           this.refresh();
