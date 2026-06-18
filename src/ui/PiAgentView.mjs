@@ -58,16 +58,16 @@ export class PiAgentView extends f.ItemView {
         e.key !== "Escape" || !this.running || (e.preventDefault(), this.cancelCurrentRun()));
     });
     this.registerDomEvent(document, "selectionchange", () => {
-      window.setTimeout(() => this.renderSelectionPreview(), 0);
+      window.setTimeout(() => this.renderSelectionState(), 0);
     });
     this.registerEvent(
       this.plugin.app.workspace.on("file-open", () => {
-        (this.renderToolBadges(), this.renderSelectionPreview());
+        this.renderSelectionState();
       })
     );
     this.registerEvent(
       this.plugin.app.workspace.on("active-leaf-change", () => {
-        (this.renderToolBadges(), this.renderSelectionPreview());
+        this.renderSelectionState();
       })
     );
     this.registerEvent(
@@ -223,10 +223,10 @@ export class PiAgentView extends f.ItemView {
       }),
       this.inputEl.addEventListener("click", () => {
         var c;
-        (this.renderSelectionPreview(), (c = this.suggestions) == null || c.update());
+        (this.renderSelectionState(), (c = this.suggestions) == null || c.update());
       }),
       this.inputEl.addEventListener("focus", () => {
-        this.renderSelectionPreview();
+        this.renderSelectionState();
       }),
       this.inputEl.addEventListener("blur", () => {
         window.setTimeout(() => {
@@ -292,7 +292,22 @@ export class PiAgentView extends f.ItemView {
       text: n.label,
       attr: { title: n.title }
     });
+    this.renderToolBadgesSelection(e);
     this.renderToolBadgesContextUsage(e);
+  }
+  renderSelectionState() {
+    (this.renderToolBadges(), this.renderSelectionPreview());
+  }
+  renderToolBadgesSelection(e) {
+    let t = this.plugin.getEditorSelectionContext?.();
+    if (!t?.text?.trim()) return;
+    let n = this.formatSelectionBadgeText(t.text),
+      s = t.text.length > 1e3 ? `${t.text.slice(0, 997)}...` : t.text;
+    e.createSpan({
+      cls: `pi-agent-tool-badge pi-agent-tool-badge-selection is-enabled${t.cached ? " is-cached" : ""}`,
+      text: `Selection: ${n}`,
+      attr: { title: [t.path, s].filter(Boolean).join("\n") }
+    });
   }
   renderSelectionPreview() {
     let e = this.selectionPreviewEl;
@@ -324,6 +339,12 @@ export class PiAgentView extends f.ItemView {
   formatSelectionPreviewText(e) {
     let t = String(e || "").trim();
     return t.length > 280 ? `${t.slice(0, 277)}...` : t;
+  }
+  formatSelectionBadgeText(e) {
+    let t = String(e || "")
+      .replace(/\s+/g, " ")
+      .trim();
+    return t.length > 80 ? `${t.slice(0, 77)}...` : t;
   }
   renderToolBadgesContextUsage(e) {
     let t = this.getDisplayedContextUsage(),

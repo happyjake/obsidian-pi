@@ -408,12 +408,27 @@
   max-width: none;
 }
 
+.pi-agent-tool-badge-selection {
+  color: var(--text-normal);
+  display: inline-block;
+  max-width: min(48ch, 58%);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+}
+
+.pi-agent-tool-badge-selection.is-cached {
+  color: var(--text-muted);
+}
+
 .pi-agent-selection-preview {
+  background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
   border-left: 2px solid var(--interactive-accent);
+  border-radius: 6px;
   display: grid;
   gap: 3px;
   min-width: 0;
-  padding: 2px 0 2px 8px;
+  padding: 6px 8px;
 }
 
 .pi-agent-selection-preview.is-empty {

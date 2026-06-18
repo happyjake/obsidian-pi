@@ -121,7 +121,7 @@ export class PiAgentPlugin extends P.Plugin {
     this.refreshCurrentContextFile();
     this.cacheCurrentEditorSelection({ allowClear: false });
     this.registerDomEvent(document, "selectionchange", () => {
-      this.cacheCurrentEditorSelection({ allowClear: true });
+      this.cacheCurrentEditorSelection({ allowClear: false });
     });
 
     this.registerEvent(
