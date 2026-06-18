@@ -418,6 +418,17 @@ export class PiAgentView extends f.ItemView {
       t.focus(),
       t.select());
   }
+  focusInput() {
+    this.showingThreadList && this.renderChatView();
+    for (let e of [0, 50, 150])
+      window.setTimeout(() => {
+        let t = this.inputEl;
+        if (!t) return;
+        (t.focus(),
+          t.setSelectionRange(t.value.length, t.value.length),
+          this.renderSelectionState());
+      }, e);
+  }
   submitInput() {
     var t, n;
     let e = (t = this.inputEl) == null ? void 0 : t.value.trim();

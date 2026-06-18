@@ -136,13 +136,20 @@ export class PiAgentPlugin extends P.Plugin {
     );
     this.registerView(T, (e) => new PiAgentView(e, this));
     this.addRibbonIcon(I, "Open Pi Agent", () => {
-      this.activateView();
+      this.activateView({ focusInput: true });
     });
     this.addCommand({
       id: "open-pi",
       name: "Open agent chat",
       callback: () => {
-        this.activateView();
+        this.activateView({ focusInput: true });
+      }
+    });
+    this.addCommand({
+      id: "focus-chat-input",
+      name: "Focus chat input",
+      callback: () => {
+        this.activateView({ focusInput: true });
       }
     });
     this.addCommand({
@@ -345,7 +352,7 @@ export class PiAgentPlugin extends P.Plugin {
       ? (this.syncCurrentThreadState(), this.saveThreadHistory(), !0)
       : !1;
   }
-  async activateView() {
+  async activateView(e = {}) {
     var n;
     let t = (n = this.app.workspace.getLeavesOfType(T)[0]) != null ? n : null;
     if (!t) {
@@ -356,6 +363,12 @@ export class PiAgentPlugin extends P.Plugin {
       await t.setViewState({ type: T, active: !0 });
     }
     this.app.workspace.revealLeaf(t);
+    if (e.focusInput) this.focusChatInput(t);
+    return t.view;
+  }
+  focusChatInput(e = this.app.workspace.getLeavesOfType(T)[0]) {
+    let t = e == null ? void 0 : e.view;
+    t instanceof PiAgentView && t.focusInput();
   }
   async runPiPrompt(e, t, n, i = this.pi) {
     var p;

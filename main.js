@@ -4972,6 +4972,17 @@ var PiAgentView = class extends f5.ItemView {
       t.focus(),
       t.select());
   }
+  focusInput() {
+    this.showingThreadList && this.renderChatView();
+    for (let e of [0, 50, 150])
+      window.setTimeout(() => {
+        let t = this.inputEl;
+        if (!t) return;
+        (t.focus(),
+          t.setSelectionRange(t.value.length, t.value.length),
+          this.renderSelectionState());
+      }, e);
+  }
   submitInput() {
     var t, n;
     let e = (t = this.inputEl) == null ? void 0 : t.value.trim();
@@ -5716,13 +5727,20 @@ var PiAgentPlugin = class extends P.Plugin {
     );
     this.registerView(PI_AGENT_VIEW_TYPE, (e) => new PiAgentView(e, this));
     this.addRibbonIcon(PI_AGENT_ICON_ID, "Open Pi Agent", () => {
-      this.activateView();
+      this.activateView({ focusInput: true });
     });
     this.addCommand({
       id: "open-pi",
       name: "Open agent chat",
       callback: () => {
-        this.activateView();
+        this.activateView({ focusInput: true });
+      }
+    });
+    this.addCommand({
+      id: "focus-chat-input",
+      name: "Focus chat input",
+      callback: () => {
+        this.activateView({ focusInput: true });
       }
     });
     this.addCommand({
@@ -5923,7 +5941,7 @@ var PiAgentPlugin = class extends P.Plugin {
       ? (this.syncCurrentThreadState(), this.saveThreadHistory(), true)
       : false;
   }
-  async activateView() {
+  async activateView(e = {}) {
     var n;
     let t = (n = this.app.workspace.getLeavesOfType(PI_AGENT_VIEW_TYPE)[0]) != null ? n : null;
     if (!t) {
@@ -5934,6 +5952,12 @@ var PiAgentPlugin = class extends P.Plugin {
       await t.setViewState({ type: PI_AGENT_VIEW_TYPE, active: true });
     }
     this.app.workspace.revealLeaf(t);
+    if (e.focusInput) this.focusChatInput(t);
+    return t.view;
+  }
+  focusChatInput(e = this.app.workspace.getLeavesOfType(PI_AGENT_VIEW_TYPE)[0]) {
+    let t = e == null ? void 0 : e.view;
+    t instanceof PiAgentView && t.focusInput();
   }
   async runPiPrompt(e, t, n, i = this.pi) {
     var p;
