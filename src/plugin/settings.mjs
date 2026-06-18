@@ -15,6 +15,20 @@ const REASONING_LABELS = {
   xhigh: "XHigh - deepest"
 };
 
+const PREFERRED_MODEL_PATTERNS = [
+  /(?:^|\/)gpt-5\.5$/i,
+  /(?:^|\/)gpt-5\.5-pro$/i,
+  /(?:^|\/)claude-haiku-4\.5$/i,
+  /(?:^|\/)claude-opus-4\.5$/i,
+  /(?:^|\/)claude-opus-4\.6$/i,
+  /(?:^|\/)claude-opus-4\.7$/i,
+  /(?:^|\/)claude-opus-4\.8$/i,
+  /(?:^|\/)claude-sonnet-4$/i,
+  /(?:^|\/)claude-sonnet-4\.5$/i,
+  /(?:^|\/)claude-sonnet-4\.6$/i,
+  /(?:^|\/)gemini-2\.5-pro$/i
+];
+
 export const DEFAULT_SETTINGS = {
   model: "",
   customModel: "",
@@ -74,7 +88,8 @@ export function getModelOptions(settings) {
   if (models.length === 0)
     return { ...EMPTY_MODEL_OPTIONS, ...options, [CUSTOM_MODEL_VALUE]: "Custom model ID" };
 
-  for (const model of models) options[model.slug] = formatModelOptionLabel(model);
+  for (const model of sortModelsForPicker(models))
+    options[model.slug] = formatModelOptionLabel(model);
   options[CUSTOM_MODEL_VALUE] = "Custom model ID";
 
   return options;
@@ -136,6 +151,21 @@ function normalizeToolMode(value) {
     : value === "workspace-write" || value === "danger-full-access"
       ? "edit"
       : DEFAULT_SETTINGS.sandboxMode;
+}
+
+function sortModelsForPicker(models) {
+  return [...models].sort((left, right) => {
+    const leftRank = getPreferredModelRank(left);
+    const rightRank = getPreferredModelRank(right);
+    if (leftRank !== rightRank) return leftRank - rightRank;
+    return left.slug.localeCompare(right.slug);
+  });
+}
+
+function getPreferredModelRank(model) {
+  const searchable = `${model.slug} ${model.displayName}`;
+  const rank = PREFERRED_MODEL_PATTERNS.findIndex((pattern) => pattern.test(searchable));
+  return rank === -1 ? PREFERRED_MODEL_PATTERNS.length : rank;
 }
 
 function formatModelOptionLabel(model) {

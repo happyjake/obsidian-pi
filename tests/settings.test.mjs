@@ -30,6 +30,32 @@ describe("plugin settings helpers", () => {
     });
   });
 
+  it("prioritizes preferred models before the full model list", () => {
+    const options = getModelOptions({
+      ...DEFAULT_SETTINGS,
+      availableModels: [
+        { ...model, slug: "astra/kimi-k2", displayName: "astra: kimi-k2" },
+        {
+          ...model,
+          slug: "openrouter/anthropic/claude-sonnet-4.5",
+          displayName: "openrouter: anthropic/claude-sonnet-4.5"
+        },
+        {
+          ...model,
+          slug: "openrouter/openai/gpt-5.5",
+          displayName: "openrouter: openai/gpt-5.5"
+        }
+      ]
+    });
+
+    expect(Object.keys(options).slice(0, 4)).toEqual([
+      "",
+      "openrouter/openai/gpt-5.5",
+      "openrouter/anthropic/claude-sonnet-4.5",
+      "astra/kimi-k2"
+    ]);
+  });
+
   it("builds reasoning options from the selected model", () => {
     expect(
       getReasoningOptions({
