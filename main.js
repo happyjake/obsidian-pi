@@ -3287,6 +3287,7 @@ function renderThreadList() {
     (this.toolBadgesEl = void 0),
     (this.selectionPreviewEl = void 0),
     (this.threadTitleEl = void 0),
+    (this.modePillEl = void 0),
     e.empty(),
     e.addClass("pi-agent-view"));
   let s = e.createDiv({ cls: "pi-agent-thread-list-header" }),
@@ -3754,10 +3755,40 @@ function restoreMessagesScroll(e, t, n) {
 }
 function renderEmptyState() {
   if (!this.messagesEl) return;
-  let t = this.messagesEl
-    .createDiv({ cls: "pi-agent-empty-state" })
-    .createSpan({ cls: "pi-agent-empty-icon" });
-  (0, f4.setIcon)(t, "messages-square");
+  let e = this.messagesEl.createDiv({ cls: "pi-agent-empty-state" }),
+    t = e.createSpan({ cls: "pi-agent-empty-icon" });
+  ((0, f4.setIcon)(t, "sparkles"),
+    e.createDiv({ cls: "pi-agent-empty-title", text: "Ask Pi about your notes" }));
+  let n = e.createDiv({ cls: "pi-agent-empty-actions" }),
+    s = [
+      {
+        icon: "file-text",
+        label: "Summarize current note",
+        prompt:
+          "Use the active note as context. Summarize the key facts, assumptions, and useful follow-up questions."
+      },
+      {
+        icon: "network",
+        label: "Research around this note",
+        prompt:
+          "Research around the active note using backlinks, outgoing links, unresolved links, tags, and search results. Return concise findings with vault references."
+      },
+      {
+        icon: "list-plus",
+        label: "Suggest frontmatter",
+        prompt:
+          "Suggest useful YAML frontmatter for the active note. Preserve existing fields and return only the frontmatter block plus a brief rationale."
+      }
+    ];
+  for (let a of s) {
+    let o = n.createEl("button", {
+      cls: "pi-agent-empty-action",
+      attr: { type: "button" }
+    });
+    ((0, f4.setIcon)(o, a.icon),
+      o.createSpan({ text: a.label }),
+      o.addEventListener("click", () => this.runPrompt(a.prompt)));
+  }
 }
 function renderMessage(e, t) {
   if (!this.messagesEl) return;
@@ -4116,8 +4147,9 @@ function formatActiveToolStatus() {
 // src/ui/run-settings.mjs
 var import_obsidian8 = require("obsidian");
 var RunSettingsControls = class {
-  constructor(plugin) {
+  constructor(plugin, callbacks = {}) {
     this.plugin = plugin;
+    this.callbacks = callbacks;
   }
   render(containerEl) {
     this.row = containerEl.createDiv({ cls: "pi-agent-run-settings" });
@@ -4142,6 +4174,7 @@ var RunSettingsControls = class {
           new import_obsidian8.Notice("Set custom model ID in plugin settings.");
         }
         await this.plugin.saveSettings();
+        this.notifyChange();
         this.refresh();
       }
     );
@@ -4154,6 +4187,7 @@ var RunSettingsControls = class {
       async (value) => {
         this.plugin.settings.reasoningEffort = value;
         await this.plugin.saveSettings();
+        this.notifyChange();
       }
     );
     this.addRunSetting(
@@ -4182,8 +4216,12 @@ var RunSettingsControls = class {
           this.plugin.settings.acknowledgedToolRisk = true;
         }
         await this.plugin.saveSettings();
+        this.notifyChange();
       }
     );
+  }
+  notifyChange() {
+    this.callbacks.onChange?.();
   }
   addModelRunSetting(containerEl, name, icon, options, value, onChange) {
     const { selectedValue, selectedLabel, displayLabel } = this.getRunSettingLabels(
@@ -4634,6 +4672,7 @@ var PiAgentView = class extends f5.ItemView {
     this.activeRuns = /* @__PURE__ */ new Map();
     this.activeEditorScrollSnapshot = void 0;
     this.stickToBottom = true;
+    this.modePillEl = void 0;
   }
   getViewType() {
     return PI_AGENT_VIEW_TYPE;
@@ -4743,7 +4782,9 @@ var PiAgentView = class extends f5.ItemView {
       this.threadTitleEl.addEventListener("keydown", (c) => {
         (c.key === "Enter" || c.key === " ") && (c.preventDefault(), this.startThreadTitleRename());
       }),
-      this.renderThreadTitle());
+      this.renderThreadTitle(),
+      (this.modePillEl = n.createSpan({ cls: "pi-agent-mode-pill" })),
+      this.renderToolModePill());
     let a = t.createDiv({ cls: "pi-agent-header-actions" }),
       o = a.createEl("button", {
         cls: "clickable-icon pi-agent-header-action",
@@ -4777,6 +4818,14 @@ var PiAgentView = class extends f5.ItemView {
     ((0, f5.setIcon)(u, "list"),
       u.addEventListener("click", (c) => {
         (c.preventDefault(), this.showThreadList());
+      }));
+    let g = a.createEl("button", {
+      cls: "clickable-icon pi-agent-header-action",
+      attr: { "aria-label": "Open Pi Agent settings", title: "Open Pi Agent settings" }
+    });
+    ((0, f5.setIcon)(g, "settings"),
+      g.addEventListener("click", (c) => {
+        (c.preventDefault(), this.openPluginSettings());
       }));
     ((this.messagesEl = e.createDiv({ cls: "pi-agent-messages" })),
       this.messagesEl.addEventListener("scroll", () => {
@@ -4832,7 +4881,12 @@ var PiAgentView = class extends f5.ItemView {
       this.resizeInput());
     let h = d.createDiv({ cls: "pi-agent-composer-bar" });
     ((this.composerBarEl = h),
-      (this.runSettings = new RunSettingsControls(this.plugin)),
+      (this.runSettings = new RunSettingsControls(this.plugin, {
+        onChange: () => {
+          this.renderToolModePill();
+          this.renderToolBadges();
+        }
+      })),
       this.runSettings.render(h));
     let m = h.createEl("button", {
       cls: "clickable-icon pi-agent-send-button",
@@ -4858,6 +4912,7 @@ var PiAgentView = class extends f5.ItemView {
       (this.toolBadgesEl = void 0),
       (this.selectionPreviewEl = void 0),
       (this.threadTitleEl = void 0),
+      (this.modePillEl = void 0),
       this.cleanupComposerBarObserver(),
       this.clearPendingActivityTimer(),
       this.unloadMessageRenderComponents(),
@@ -4976,6 +5031,47 @@ var PiAgentView = class extends f5.ItemView {
     if (!this.threadTitleEl) return;
     let e = this.plugin.getCurrentThread();
     (this.threadTitleEl.empty(), this.threadTitleEl.createSpan({ text: e.title }));
+  }
+  renderToolModePill() {
+    if (!this.modePillEl) return;
+    let { label: e, cls: t, title: n } = this.getToolModePillInfo();
+    (this.modePillEl.setAttr("class", `pi-agent-mode-pill ${t}`),
+      this.modePillEl.setAttr("title", n),
+      this.modePillEl.setText(e));
+  }
+  getToolModePillInfo() {
+    let e = this.plugin.settings.sandboxMode;
+    return e === "full-agent"
+      ? {
+          label: "Full Agent",
+          cls: "is-full",
+          title: "Full agent mode: edit/write tools and shell commands are enabled."
+        }
+      : e === "edit" || e === "workspace-write"
+        ? {
+            label: "Edit",
+            cls: "is-edit",
+            title: "Edit mode: vault/project writes are enabled."
+          }
+        : e === "chat"
+          ? {
+              label: "Chat",
+              cls: "is-chat",
+              title: "Chat mode: no Pi CLI tools are enabled."
+            }
+          : {
+              label: "Review",
+              cls: "is-review",
+              title: "Review mode: read/search/list tools are enabled."
+            };
+  }
+  openPluginSettings() {
+    let e = this.plugin.app.setting;
+    if (!e?.open || !e?.openTabById) {
+      new f5.Notice("Open Pi Agent settings from Obsidian Settings.");
+      return;
+    }
+    (e.open(), e.openTabById(this.plugin.manifest.id));
   }
   startThreadTitleRename() {
     var a;
@@ -5104,8 +5200,8 @@ var PiAgentView = class extends f5.ItemView {
   updateComposerBarMode(e) {
     let t = this.composerBarEl;
     if (!t) return;
-    let n = e < 560,
-      s = e < 390;
+    let n = e < 360,
+      s = e < 300;
     (!n && this.composerBarExpanded && (this.composerBarExpanded = false),
       t.toggleClass("is-compact", n),
       t.toggleClass("is-narrow", s),

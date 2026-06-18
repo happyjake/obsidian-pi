@@ -9,8 +9,9 @@ import {
 import { confirmWithModal } from "./modals/confirm-modal.mjs";
 
 export class RunSettingsControls {
-  constructor(plugin) {
+  constructor(plugin, callbacks = {}) {
     this.plugin = plugin;
+    this.callbacks = callbacks;
   }
 
   render(containerEl) {
@@ -39,6 +40,7 @@ export class RunSettingsControls {
           new Notice("Set custom model ID in plugin settings.");
         }
         await this.plugin.saveSettings();
+        this.notifyChange();
         this.refresh();
       }
     );
@@ -52,6 +54,7 @@ export class RunSettingsControls {
       async (value) => {
         this.plugin.settings.reasoningEffort = value;
         await this.plugin.saveSettings();
+        this.notifyChange();
       }
     );
 
@@ -82,8 +85,13 @@ export class RunSettingsControls {
           this.plugin.settings.acknowledgedToolRisk = true;
         }
         await this.plugin.saveSettings();
+        this.notifyChange();
       }
     );
+  }
+
+  notifyChange() {
+    this.callbacks.onChange?.();
   }
 
   addModelRunSetting(containerEl, name, icon, options, value, onChange) {

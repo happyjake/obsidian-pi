@@ -1,9 +1,11 @@
 .pi-agent-view {
+  background: var(--background-secondary);
+  color: var(--text-normal);
   display: flex;
   flex-direction: column;
   height: 100%;
-  gap: 12px;
-  padding: 12px;
+  gap: 0;
+  padding: 0;
 }
 
 .pi-agent-header {
@@ -11,29 +13,38 @@
   display: flex;
   gap: 8px;
   justify-content: space-between;
-  min-height: 30px;
+  min-height: 38px;
+  padding: 0 10px 0 13px;
+  border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .pi-agent-brand {
   align-items: center;
-  display: inline-flex;
-  gap: 7px;
+  display: flex;
+  flex: 1 1 auto;
+  gap: 8px;
   min-width: 0;
 }
 
 .pi-agent-brand-icon {
   align-items: center;
-  color: var(--text-muted);
+  background: linear-gradient(
+    135deg,
+    var(--interactive-accent),
+    color-mix(in srgb, var(--interactive-accent) 52%, black)
+  );
+  border-radius: 6px;
+  color: var(--text-on-accent);
   display: inline-flex;
   flex: 0 0 auto;
-  height: 18px;
+  height: 19px;
   justify-content: center;
-  width: 18px;
+  width: 19px;
 }
 
 .pi-agent-brand-icon svg {
-  height: 18px;
-  width: 18px;
+  height: 14px;
+  width: 14px;
 }
 
 .pi-agent-thread-title {
@@ -44,7 +55,9 @@
   color: var(--text-normal);
   cursor: default;
   display: inline;
-  font-size: var(--font-ui-small);
+  flex: 0 1 auto;
+  font-size: 13px;
+  font-weight: var(--font-semibold);
   min-width: 0;
   overflow: hidden;
   padding: 0;
@@ -81,6 +94,38 @@
   width: min(220px, 34vw);
 }
 
+.pi-agent-mode-pill {
+  border-radius: 999px;
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  line-height: 1;
+  padding: 3px 6px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.pi-agent-mode-pill.is-full {
+  background: color-mix(in srgb, var(--text-error) 13%, transparent);
+  color: var(--text-error);
+}
+
+.pi-agent-mode-pill.is-edit {
+  background: color-mix(in srgb, var(--text-warning) 15%, transparent);
+  color: var(--text-warning);
+}
+
+.pi-agent-mode-pill.is-review {
+  background: color-mix(in srgb, var(--interactive-accent) 12%, transparent);
+  color: var(--text-accent);
+}
+
+.pi-agent-mode-pill.is-chat {
+  background: color-mix(in srgb, var(--text-muted) 12%, transparent);
+  color: var(--text-muted);
+}
+
 .pi-agent-header-actions {
   align-items: center;
   display: inline-flex;
@@ -91,9 +136,10 @@
 .pi-agent-header-action,
 .pi-agent-thread-menu {
   background: transparent;
+  border-radius: 6px;
   color: var(--text-muted);
-  height: 30px;
-  width: 30px;
+  height: 28px;
+  width: 28px;
 }
 
 .pi-agent-header-action svg,
@@ -106,7 +152,7 @@
 .pi-agent-header-action:focus,
 .pi-agent-thread-menu:hover,
 .pi-agent-thread-menu:focus {
-  background: transparent;
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
@@ -114,30 +160,31 @@
   align-items: center;
   display: flex;
   flex: 1 1 auto;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
   overflow: hidden;
 }
 
 .pi-agent-view button.pi-agent-run-setting {
   align-items: center;
-  background: transparent;
-  border: 0;
-  border-radius: 6px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 7px;
   box-shadow: none;
   color: var(--text-normal);
-  gap: 4px;
+  gap: 5px;
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   height: 28px;
   justify-content: center;
-  padding: 0 4px;
+  min-width: 0;
+  padding: 0 9px;
   width: auto;
 }
 
 .pi-agent-run-setting:hover,
 .pi-agent-run-setting:focus {
-  background: transparent;
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
 }
 
@@ -148,6 +195,11 @@
 
 .pi-agent-run-setting-model .pi-agent-control-label {
   max-width: min(240px, 36vw);
+}
+
+.pi-agent-view button.pi-agent-run-setting-model {
+  flex: 1 1 auto;
+  justify-content: flex-start;
 }
 
 .pi-agent-run-setting-speed-fast,
@@ -176,12 +228,10 @@
 }
 
 .pi-agent-messages {
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 8px;
   flex: 1;
   min-height: 220px;
   overflow: auto;
-  padding: 10px;
+  padding: 14px 13px 6px;
 }
 
 .pi-agent-empty {
@@ -191,23 +241,86 @@
 
 .pi-agent-empty-state {
   align-items: center;
-  display: flex;
+  display: grid;
+  gap: 10px;
   justify-content: center;
   min-height: 100%;
+  padding: 20px;
+  text-align: center;
 }
 
 .pi-agent-empty-icon {
-  color: color-mix(in srgb, var(--text-muted) 35%, transparent);
+  align-items: center;
+  background: color-mix(in srgb, var(--interactive-accent) 13%, transparent);
+  border-radius: 15px;
+  color: var(--interactive-accent);
   display: inline-flex;
+  height: 54px;
+  justify-content: center;
+  justify-self: center;
+  width: 54px;
 }
 
 .pi-agent-empty-icon svg {
-  height: 34px;
-  width: 34px;
+  height: 27px;
+  width: 27px;
+}
+
+.pi-agent-empty-title {
+  color: var(--text-normal);
+  font-size: 15px;
+  font-weight: var(--font-semibold);
+  line-height: 1.25;
+}
+
+.pi-agent-empty-actions {
+  display: grid;
+  gap: 6px;
+  justify-self: stretch;
+  margin-top: 4px;
+  max-width: 286px;
+  width: 100%;
+}
+
+.pi-agent-view button.pi-agent-empty-action {
+  align-items: center;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 9px;
+  box-shadow: none;
+  color: var(--text-normal);
+  cursor: pointer;
+  display: flex;
+  font-family: inherit;
+  font-size: 12.5px;
+  gap: 9px;
+  height: auto;
+  justify-content: flex-start;
+  line-height: 1.35;
+  padding: 9px 11px;
+  text-align: left;
+}
+
+.pi-agent-empty-action svg {
+  color: var(--interactive-accent);
+  flex: 0 0 auto;
+  height: 15px;
+  width: 15px;
+}
+
+.pi-agent-view button.pi-agent-empty-action:hover,
+.pi-agent-view button.pi-agent-empty-action:focus {
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary));
+  border-color: color-mix(
+    in srgb,
+    var(--interactive-accent) 45%,
+    var(--background-modifier-border)
+  );
 }
 
 .pi-agent-message {
-  margin-bottom: 12px;
+  margin-bottom: 14px;
+  position: relative;
   -webkit-user-select: text;
   user-select: text;
 }
@@ -217,10 +330,9 @@
   color: var(--text-muted);
   display: flex;
   gap: 5px;
-  font-size: 12px;
+  font-size: var(--font-ui-smaller);
   font-weight: 600;
-  margin-bottom: 4px;
-  text-transform: uppercase;
+  margin-bottom: 6px;
 }
 
 .pi-agent-message-role-title {
@@ -236,8 +348,14 @@
   border-radius: 6px;
   color: var(--text-muted);
   height: 28px;
-  opacity: 1;
+  opacity: 0;
+  transition: opacity 120ms ease;
   width: 28px;
+}
+
+.pi-agent-message:hover .pi-agent-message-actions,
+.pi-agent-message:focus-within .pi-agent-message-actions {
+  opacity: 1;
 }
 
 .pi-agent-message-actions:hover,
@@ -256,9 +374,9 @@
   align-items: center;
   color: var(--text-faint);
   display: inline-flex;
-  height: 14px;
+  height: 18px;
   justify-content: center;
-  width: 14px;
+  width: 18px;
 }
 
 .pi-agent-role-icon svg {
@@ -266,17 +384,26 @@
   width: 14px;
 }
 
+.pi-agent-role-icon-pi {
+  background: color-mix(in srgb, var(--interactive-accent) 16%, transparent);
+  border-radius: 7px;
+  color: var(--interactive-accent);
+  height: 26px;
+  width: 26px;
+}
+
 .pi-agent-message-content {
-  background: var(--background-secondary);
-  border-radius: 8px;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 11px;
   color: var(--text-normal);
   cursor: text;
   font-family: var(--font-interface);
-  font-size: var(--font-ui-medium);
+  font-size: 13.5px;
   line-height: var(--line-height-normal);
   margin: 0;
   overflow: auto;
-  padding: 10px;
+  padding: 9px 11px;
   -webkit-user-select: text;
   user-select: text;
 }
@@ -369,20 +496,61 @@
 }
 
 .pi-agent-message-user .pi-agent-message-content {
-  background: color-mix(in srgb, var(--interactive-accent) 10%, var(--background-primary-alt));
+  background: color-mix(in srgb, var(--interactive-accent) 15%, var(--background-primary));
+  border-color: color-mix(in srgb, var(--interactive-accent) 24%, transparent);
+  border-radius: 13px 13px 5px 13px;
+  max-width: 88%;
 }
 
 .pi-agent-message-user .pi-agent-message-role {
+  justify-content: flex-end;
+  margin: 4px 0 0;
+  min-height: 0;
   color: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-muted));
+}
+
+.pi-agent-message-user .pi-agent-message-role-title {
+  display: none;
 }
 
 .pi-agent-message-user .pi-agent-role-icon {
   color: color-mix(in srgb, var(--interactive-accent) 82%, var(--text-muted));
 }
 
-.pi-agent-composer {
-  display: grid;
+.pi-agent-message-user {
+  align-items: flex-end;
+  display: flex;
+  flex-direction: column;
+}
+
+.pi-agent-message-assistant .pi-agent-message-role {
+  align-items: flex-start;
   gap: 8px;
+  margin-bottom: 6px;
+}
+
+.pi-agent-message-assistant .pi-agent-message-role-title {
+  align-items: center;
+  color: var(--text-muted);
+  gap: 8px;
+}
+
+.pi-agent-message-assistant .pi-agent-message-content {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  line-height: 1.62;
+  margin-left: 35px;
+  overflow: visible;
+  padding: 0;
+}
+
+.pi-agent-composer {
+  border-top: 1px solid var(--background-modifier-border);
+  display: grid;
+  flex: 0 0 auto;
+  gap: 8px;
+  padding: 9px 13px 13px;
   position: relative;
 }
 
@@ -390,26 +558,38 @@
   align-items: center;
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  min-height: 18px;
+  gap: 5px;
+  min-height: 24px;
 }
 
 .pi-agent-tool-badge {
+  align-items: center;
+  border-radius: 999px;
   color: var(--text-muted);
-  font-size: var(--font-ui-smaller);
-  line-height: 1.4;
-  padding: 0;
+  display: inline-flex;
+  font-size: 11.5px;
+  font-weight: 500;
+  gap: 4px;
+  line-height: 1;
+  min-height: 24px;
+  padding: 0 9px;
   white-space: nowrap;
 }
 
 .pi-agent-tool-badge.is-enabled {
-  color: var(--text-muted);
+  background: color-mix(in srgb, var(--interactive-accent) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--interactive-accent) 28%, transparent);
+  color: var(--text-accent);
 }
 
 .pi-agent-tool-badge-context {
+  background: transparent;
+  border: 0;
+  color: var(--text-faint);
   font-variant-numeric: tabular-nums;
   margin-left: auto;
   max-width: none;
+  padding-right: 0;
 }
 
 .pi-agent-tool-badge-selection {
@@ -426,13 +606,13 @@
 }
 
 .pi-agent-selection-preview {
-  background: color-mix(in srgb, var(--interactive-accent) 5%, transparent);
+  background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary));
   border-left: 2px solid var(--interactive-accent);
-  border-radius: 6px;
+  border-radius: 7px;
   display: grid;
-  gap: 3px;
+  gap: 4px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 7px 9px;
 }
 
 .pi-agent-selection-preview.is-empty {
@@ -453,7 +633,7 @@
 .pi-agent-selection-preview-label {
   color: var(--text-normal);
   flex: 0 0 auto;
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   font-weight: 600;
   line-height: 1.25;
 }
@@ -471,9 +651,9 @@
 .pi-agent-selection-preview-text {
   color: var(--text-muted);
   font-family: var(--font-monospace);
-  font-size: var(--font-ui-smaller);
+  font-size: 11.5px;
   line-height: 1.35;
-  max-height: 4.05em;
+  max-height: 4.1em;
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
@@ -595,14 +775,28 @@
 
 .pi-agent-composer textarea {
   background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  box-shadow: none;
   color: var(--text-normal);
-  line-height: var(--line-height-normal);
+  font-size: 13.5px;
+  line-height: 1.5;
   max-height: 160px;
   min-height: 38px;
   overflow-y: auto;
+  padding: 9px 11px;
   resize: none;
   width: 100%;
   -webkit-text-fill-color: var(--text-normal);
+}
+
+.pi-agent-composer textarea:focus {
+  border-color: color-mix(
+    in srgb,
+    var(--interactive-accent) 60%,
+    var(--background-modifier-border)
+  );
+  box-shadow: none;
 }
 
 .pi-agent-composer textarea::placeholder {
@@ -625,8 +819,9 @@
   gap: 4px;
   height: 30px;
   justify-content: center;
+  margin-left: auto;
   padding: 0 10px;
-  border-radius: 6px;
+  border-radius: 8px;
   width: auto;
 }
 
@@ -692,6 +887,7 @@
 .pi-agent-model-picker-label {
   color: var(--text-normal);
   font-size: var(--font-ui-small);
+  font-weight: var(--font-medium);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -703,6 +899,10 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.suggestion-item.is-selected .pi-agent-model-picker-label {
+  color: var(--text-accent);
 }
 
 .pi-agent-message-activity {
@@ -802,7 +1002,7 @@
   display: grid;
   font-size: var(--font-ui-smaller);
   gap: 3px;
-  margin: 2px 0 0 30px;
+  margin: 2px 0 0 35px;
   padding-left: 10px;
 }
 
@@ -843,6 +1043,7 @@
   display: flex;
   gap: 8px;
   min-height: 30px;
+  padding: 13px 14px 10px;
 }
 
 .pi-agent-thread-list-heading {
@@ -869,17 +1070,20 @@
   flex-direction: column;
   min-height: 0;
   overflow: auto;
+  padding: 0 8px 12px;
 }
 
 .pi-agent-thread-list-row {
   align-items: center;
-  border-bottom: 1px solid var(--background-modifier-border);
+  border-bottom: 0;
+  border-radius: 9px;
   cursor: pointer;
   display: flex;
   gap: 8px;
   justify-content: space-between;
   min-height: 44px;
-  padding: 7px 0;
+  margin-bottom: 2px;
+  padding: 9px;
 }
 
 .pi-agent-thread-list-row:hover,
@@ -888,8 +1092,8 @@
 }
 
 .pi-agent-thread-list-row.is-current {
+  background: color-mix(in srgb, var(--interactive-accent) 9%, transparent);
   box-shadow: inset 2px 0 0 var(--interactive-accent);
-  padding-left: 8px;
 }
 
 .pi-agent-thread-list-info {
@@ -903,7 +1107,7 @@
   cursor: pointer;
   display: flex;
   gap: 5px;
-  font-size: var(--font-ui-small);
+  font-size: 13px;
   line-height: 1.25;
   max-width: 100%;
   overflow: hidden;
@@ -964,7 +1168,7 @@
 
 .pi-agent-thread-list-meta {
   color: var(--text-faint);
-  font-size: var(--font-ui-smaller);
+  font-size: 11px;
   line-height: 1.25;
   margin-top: 2px;
 }
@@ -993,8 +1197,16 @@
 
 .pi-agent-thread-list-action:hover,
 .pi-agent-thread-list-action:focus {
-  background: transparent;
+  background: var(--background-modifier-hover);
   color: var(--text-normal);
+}
+
+.pi-agent-message-content.markdown-rendered > :first-child {
+  margin-top: 0;
+}
+
+.pi-agent-message-content.markdown-rendered > :last-child {
+  margin-bottom: 0;
 }
 
 .pi-agent-modal-actions {

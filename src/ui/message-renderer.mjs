@@ -34,10 +34,40 @@ export function restoreMessagesScroll(e, t, n) {
 
 export function renderEmptyState() {
   if (!this.messagesEl) return;
-  let t = this.messagesEl
-    .createDiv({ cls: "pi-agent-empty-state" })
-    .createSpan({ cls: "pi-agent-empty-icon" });
-  (0, f.setIcon)(t, "messages-square");
+  let e = this.messagesEl.createDiv({ cls: "pi-agent-empty-state" }),
+    t = e.createSpan({ cls: "pi-agent-empty-icon" });
+  ((0, f.setIcon)(t, "sparkles"),
+    e.createDiv({ cls: "pi-agent-empty-title", text: "Ask Pi about your notes" }));
+  let n = e.createDiv({ cls: "pi-agent-empty-actions" }),
+    s = [
+      {
+        icon: "file-text",
+        label: "Summarize current note",
+        prompt:
+          "Use the active note as context. Summarize the key facts, assumptions, and useful follow-up questions."
+      },
+      {
+        icon: "network",
+        label: "Research around this note",
+        prompt:
+          "Research around the active note using backlinks, outgoing links, unresolved links, tags, and search results. Return concise findings with vault references."
+      },
+      {
+        icon: "list-plus",
+        label: "Suggest frontmatter",
+        prompt:
+          "Suggest useful YAML frontmatter for the active note. Preserve existing fields and return only the frontmatter block plus a brief rationale."
+      }
+    ];
+  for (let a of s) {
+    let o = n.createEl("button", {
+      cls: "pi-agent-empty-action",
+      attr: { type: "button" }
+    });
+    ((0, f.setIcon)(o, a.icon),
+      o.createSpan({ text: a.label }),
+      o.addEventListener("click", () => this.runPrompt(a.prompt)));
+  }
 }
 
 export function renderMessage(e, t) {

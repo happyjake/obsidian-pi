@@ -42,6 +42,7 @@ export class PiAgentView extends f.ItemView {
     this.activeRuns = new Map();
     this.activeEditorScrollSnapshot = void 0;
     this.stickToBottom = !0;
+    this.modePillEl = void 0;
   }
   getViewType() {
     return T;
@@ -151,7 +152,9 @@ export class PiAgentView extends f.ItemView {
       this.threadTitleEl.addEventListener("keydown", (c) => {
         (c.key === "Enter" || c.key === " ") && (c.preventDefault(), this.startThreadTitleRename());
       }),
-      this.renderThreadTitle());
+      this.renderThreadTitle(),
+      (this.modePillEl = n.createSpan({ cls: "pi-agent-mode-pill" })),
+      this.renderToolModePill());
     let a = t.createDiv({ cls: "pi-agent-header-actions" }),
       o = a.createEl("button", {
         cls: "clickable-icon pi-agent-header-action",
@@ -185,6 +188,14 @@ export class PiAgentView extends f.ItemView {
     ((0, f.setIcon)(u, "list"),
       u.addEventListener("click", (c) => {
         (c.preventDefault(), this.showThreadList());
+      }));
+    let g = a.createEl("button", {
+      cls: "clickable-icon pi-agent-header-action",
+      attr: { "aria-label": "Open Pi Agent settings", title: "Open Pi Agent settings" }
+    });
+    ((0, f.setIcon)(g, "settings"),
+      g.addEventListener("click", (c) => {
+        (c.preventDefault(), this.openPluginSettings());
       }));
     ((this.messagesEl = e.createDiv({ cls: "pi-agent-messages" })),
       this.messagesEl.addEventListener("scroll", () => {
@@ -240,7 +251,12 @@ export class PiAgentView extends f.ItemView {
       this.resizeInput());
     let h = d.createDiv({ cls: "pi-agent-composer-bar" });
     ((this.composerBarEl = h),
-      (this.runSettings = new RunSettingsControls(this.plugin)),
+      (this.runSettings = new RunSettingsControls(this.plugin, {
+        onChange: () => {
+          this.renderToolModePill();
+          this.renderToolBadges();
+        }
+      })),
       this.runSettings.render(h));
     let m = h.createEl("button", {
       cls: "clickable-icon pi-agent-send-button",
@@ -266,6 +282,7 @@ export class PiAgentView extends f.ItemView {
       (this.toolBadgesEl = void 0),
       (this.selectionPreviewEl = void 0),
       (this.threadTitleEl = void 0),
+      (this.modePillEl = void 0),
       this.cleanupComposerBarObserver(),
       this.clearPendingActivityTimer(),
       this.unloadMessageRenderComponents(),
@@ -384,6 +401,47 @@ export class PiAgentView extends f.ItemView {
     if (!this.threadTitleEl) return;
     let e = this.plugin.getCurrentThread();
     (this.threadTitleEl.empty(), this.threadTitleEl.createSpan({ text: e.title }));
+  }
+  renderToolModePill() {
+    if (!this.modePillEl) return;
+    let { label: e, cls: t, title: n } = this.getToolModePillInfo();
+    (this.modePillEl.setAttr("class", `pi-agent-mode-pill ${t}`),
+      this.modePillEl.setAttr("title", n),
+      this.modePillEl.setText(e));
+  }
+  getToolModePillInfo() {
+    let e = this.plugin.settings.sandboxMode;
+    return e === "full-agent"
+      ? {
+          label: "Full Agent",
+          cls: "is-full",
+          title: "Full agent mode: edit/write tools and shell commands are enabled."
+        }
+      : e === "edit" || e === "workspace-write"
+        ? {
+            label: "Edit",
+            cls: "is-edit",
+            title: "Edit mode: vault/project writes are enabled."
+          }
+        : e === "chat"
+          ? {
+              label: "Chat",
+              cls: "is-chat",
+              title: "Chat mode: no Pi CLI tools are enabled."
+            }
+          : {
+              label: "Review",
+              cls: "is-review",
+              title: "Review mode: read/search/list tools are enabled."
+            };
+  }
+  openPluginSettings() {
+    let e = this.plugin.app.setting;
+    if (!e?.open || !e?.openTabById) {
+      new f.Notice("Open Pi Agent settings from Obsidian Settings.");
+      return;
+    }
+    (e.open(), e.openTabById(this.plugin.manifest.id));
   }
   startThreadTitleRename() {
     var a;
@@ -511,8 +569,8 @@ export class PiAgentView extends f.ItemView {
   updateComposerBarMode(e) {
     let t = this.composerBarEl;
     if (!t) return;
-    let n = e < 560,
-      s = e < 390;
+    let n = e < 360,
+      s = e < 300;
     (!n && this.composerBarExpanded && (this.composerBarExpanded = !1),
       t.toggleClass("is-compact", n),
       t.toggleClass("is-narrow", s),
