@@ -1,11 +1,15 @@
 .pi-agent-view {
   background: var(--background-secondary);
+  box-sizing: border-box;
   color: var(--text-normal);
   display: flex;
   flex-direction: column;
   height: 100%;
   gap: 0;
+  min-width: 0;
+  overflow-x: hidden;
   padding: 0;
+  width: 100%;
 }
 
 .pi-agent-header {
@@ -558,11 +562,16 @@
 
 .pi-agent-composer {
   border-top: 1px solid var(--background-modifier-border);
+  box-sizing: border-box;
   display: grid;
   flex: 0 0 auto;
   gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
   padding: 9px 13px 13px;
   position: relative;
+  width: 100%;
 }
 
 .pi-agent-tool-badges {
@@ -570,19 +579,25 @@
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
+  max-width: 100%;
   min-height: 24px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .pi-agent-tool-badge {
   align-items: center;
   border-radius: 999px;
+  box-sizing: border-box;
   color: var(--text-muted);
   display: inline-flex;
   font-size: 11.5px;
   font-weight: 500;
   gap: 4px;
   line-height: 1;
+  max-width: 100%;
   min-height: 24px;
+  min-width: 0;
   padding: 0 9px;
   white-space: nowrap;
 }
@@ -597,9 +612,11 @@
   color: var(--text-normal);
   display: inline-block;
   max-width: min(48ch, 58%);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   vertical-align: bottom;
+  white-space: nowrap;
 }
 
 .pi-agent-tool-badge-selection.is-cached {
@@ -697,10 +714,14 @@
   background: color-mix(in srgb, var(--interactive-accent) 6%, var(--background-primary));
   border-left: 2px solid var(--interactive-accent);
   border-radius: 7px;
+  box-sizing: border-box;
   display: grid;
   gap: 4px;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: hidden;
   padding: 7px 9px;
+  width: 100%;
 }
 
 .pi-agent-selection-preview.is-empty {
@@ -715,7 +736,9 @@
   align-items: center;
   display: flex;
   gap: 6px;
+  max-width: 100%;
   min-width: 0;
+  overflow: hidden;
 }
 
 .pi-agent-selection-preview-label {
@@ -737,14 +760,18 @@
 }
 
 .pi-agent-selection-preview-text {
+  box-sizing: border-box;
   color: var(--text-muted);
   font-family: var(--font-monospace);
   font-size: 11.5px;
   line-height: 1.35;
   max-height: 4.1em;
+  max-width: 100%;
   min-width: 0;
   overflow: hidden;
   overflow-wrap: anywhere;
+  width: 100%;
+  word-break: break-word;
   white-space: pre-wrap;
 }
 
@@ -752,7 +779,9 @@
   align-items: center;
   display: flex;
   gap: 6px;
+  max-width: 100%;
   min-width: 0;
+  overflow-x: hidden;
 }
 
 .pi-agent-composer-bar.is-compact {
@@ -803,6 +832,9 @@
 .pi-agent-prompt-queue {
   display: grid;
   gap: 6px;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 .pi-agent-prompt-queue.is-empty {
@@ -839,7 +871,10 @@
   font-size: var(--font-ui-small);
   line-height: 1.35;
   max-height: 3.9em;
+  min-width: 0;
   overflow: hidden;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .pi-agent-prompt-queue-actions {
@@ -865,12 +900,16 @@
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 10px;
+  box-sizing: border-box;
   box-shadow: none;
   color: var(--text-normal);
+  display: block;
   font-size: 13.5px;
   line-height: 1.5;
   max-height: 160px;
+  max-width: 100%;
   min-height: 38px;
+  min-width: 0;
   overflow-y: auto;
   padding: 9px 11px;
   resize: none;
