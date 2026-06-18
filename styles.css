@@ -998,17 +998,15 @@
   background: var(--background-primary);
   border: 1px solid var(--background-modifier-border);
   border-radius: 10px;
-  bottom: calc(100% + 8px);
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.5);
   display: grid;
   gap: 4px;
-  left: 0;
   max-height: min(560px, 70vh);
   overflow: hidden;
   padding: 6px;
-  position: absolute;
-  width: min(540px, 86vw);
-  z-index: 50;
+  position: fixed;
+  width: min(540px, calc(100vw - 16px));
+  z-index: 10000;
 }
 
 .pi-agent-model-picker-search {

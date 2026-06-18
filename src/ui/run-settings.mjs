@@ -219,11 +219,16 @@ export class RunSettingsControls {
     const closeOnEscape = (event) => {
       if (event.key === "Escape") this.closeModelPicker();
     };
+    const reposition = () => this.positionModelPicker();
     document.addEventListener("mousedown", closeOnOutsidePointer, true);
     document.addEventListener("keydown", closeOnEscape, true);
+    window.addEventListener("resize", reposition, true);
+    window.addEventListener("scroll", reposition, true);
     this.modelPickerCleanup = () => {
       document.removeEventListener("mousedown", closeOnOutsidePointer, true);
       document.removeEventListener("keydown", closeOnEscape, true);
+      window.removeEventListener("resize", reposition, true);
+      window.removeEventListener("scroll", reposition, true);
     };
   }
 
@@ -242,7 +247,7 @@ export class RunSettingsControls {
     if (!anchorEl || !this.modelPickerOptions) return;
 
     this.modelPickerEl?.remove();
-    const pickerEl = anchorEl.createDiv({ cls: "pi-agent-model-picker-popover" });
+    const pickerEl = document.body.createDiv({ cls: "pi-agent-model-picker-popover" });
     this.modelPickerEl = pickerEl;
 
     const searchEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-search" });
@@ -259,6 +264,24 @@ export class RunSettingsControls {
     this.modelPickerResultsEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-results" });
     this.populateModelPickerResults();
     window.setTimeout(() => inputEl.focus(), 0);
+  }
+
+  positionModelPicker() {
+    if (!this.modelPickerEl || !this.modelPickerButtonEl) return;
+
+    const rect = this.modelPickerButtonEl.getBoundingClientRect();
+    const width = Math.min(540, window.innerWidth - 16);
+    this.modelPickerEl.style.width = `${width}px`;
+
+    const height = this.modelPickerEl.offsetHeight;
+    const left = Math.max(8, Math.min(window.innerWidth - width - 8, rect.left));
+    const topAbove = rect.top - height - 8;
+    const topBelow = rect.bottom + 8;
+    const top =
+      topAbove >= 8 ? topAbove : Math.max(8, Math.min(window.innerHeight - height - 8, topBelow));
+
+    this.modelPickerEl.style.left = `${left}px`;
+    this.modelPickerEl.style.top = `${top}px`;
   }
 
   populateModelPickerResults() {
@@ -283,6 +306,7 @@ export class RunSettingsControls {
         text: `No models match "${this.modelPickerQuery}".`
       });
     }
+    this.positionModelPicker();
   }
 
   renderModelPickerSection(title, items, favoriteSection) {
