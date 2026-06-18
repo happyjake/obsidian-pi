@@ -24,23 +24,21 @@ export function renderThreadList() {
     (this.modePillEl = void 0),
     e.empty(),
     e.addClass("pi-agent-view"));
+  this.renderThreadListPanelHeader(e);
   let s = e.createDiv({ cls: "pi-agent-thread-list-header" }),
-    o = s.createEl("button", {
-      cls: "clickable-icon pi-agent-header-action",
-      attr: { "aria-label": "Back to chat", title: "Back to chat" }
-    });
-  ((0, f.setIcon)(o, "arrow-left"), o.addEventListener("click", () => this.renderChatView()));
-  let l = s.createDiv({ cls: "pi-agent-thread-list-heading" });
+    o = t.filter((m) => m.favorite).length,
+    l = s.createDiv({ cls: "pi-agent-thread-list-heading" });
   (l.createDiv({ cls: "pi-agent-thread-list-title-heading", text: "Threads" }),
     l.createDiv({
       cls: "pi-agent-thread-list-subtitle",
-      text: `${t.length} chat${t.length === 1 ? "" : "s"}`
+      text: `${t.length} conversation${t.length === 1 ? "" : "s"} · ${o} starred`
     }));
   let d = s.createEl("button", {
-    cls: "clickable-icon pi-agent-header-action",
+    cls: "clickable-icon pi-agent-thread-list-new-button",
     attr: { "aria-label": "New chat", title: "New chat" }
   });
   ((0, f.setIcon)(d, "plus"),
+    d.createSpan({ text: "New" }),
     d.addEventListener("click", () => {
       (this.plugin.startNewThread(), this.renderChatView());
     }));
@@ -50,53 +48,77 @@ export function renderThreadList() {
     : t.forEach((m) => this.renderThreadListRow(h, m, m.id === n.id));
 }
 
+export function renderThreadListPanelHeader(e) {
+  let t = e.createDiv({ cls: "pi-agent-header" }),
+    n = t.createDiv({ cls: "pi-agent-brand" }),
+    s = n.createSpan({
+      cls: "pi-agent-brand-icon",
+      attr: { title: "Pi Agent" }
+    });
+  (this.renderPiIcon(s),
+    n.createSpan({ cls: "pi-agent-thread-title pi-agent-thread-title-static", text: "Pi Agent" }),
+    (this.modePillEl = n.createSpan({ cls: "pi-agent-mode-pill" })),
+    this.renderToolModePill());
+  let a = t.createDiv({ cls: "pi-agent-header-actions" }),
+    o = a.createEl("button", {
+      cls: "clickable-icon pi-agent-header-action",
+      attr: { "aria-label": "New chat", title: "New chat" }
+    });
+  ((0, f.setIcon)(o, "plus"),
+    o.addEventListener("click", (d) => {
+      (d.preventDefault(), this.plugin.startNewThread(), this.renderChatView());
+    }));
+  let l = a.createEl("button", {
+    cls: "clickable-icon pi-agent-thread-menu is-active",
+    attr: { "aria-label": "Back to chat", title: "Back to chat" }
+  });
+  ((0, f.setIcon)(l, "list"),
+    l.addEventListener("click", (d) => {
+      (d.preventDefault(), this.renderChatView());
+    }));
+  let u = a.createEl("button", {
+    cls: "clickable-icon pi-agent-header-action",
+    attr: { "aria-label": "Open Pi Agent settings", title: "Open Pi Agent settings" }
+  });
+  ((0, f.setIcon)(u, "settings"),
+    u.addEventListener("click", (d) => {
+      (d.preventDefault(), this.openPluginSettings());
+    }));
+}
+
 export function renderThreadListRow(e, t, n) {
   let s = e.createDiv({
       cls: `pi-agent-thread-list-row${n ? " is-current" : ""}`
     }),
-    a = s.createDiv({ cls: "pi-agent-thread-list-info" }),
-    o = a.createDiv({
+    a = s.createSpan({
+      cls: `pi-agent-thread-list-row-icon${this.isThreadRunning(t.id) ? " is-running" : ""}`
+    }),
+    o = s.createDiv({ cls: "pi-agent-thread-list-info" }),
+    l = o.createDiv({
       cls: "pi-agent-thread-list-title",
       attr: { title: "Open chat" }
     });
-  if (this.isThreadRunning(t.id)) {
-    let h = o.createSpan({
-      cls: "pi-agent-thread-list-running",
-      attr: { title: "Agent is running in this chat" }
-    });
-    (0, f.setIcon)(h, "loader");
-  }
+  (0, f.setIcon)(a, this.isThreadRunning(t.id) ? "loader" : "message-circle");
   if (t.favorite) {
-    let h = o.createSpan({
+    let h = l.createSpan({
       cls: "pi-agent-thread-list-favorite-indicator",
       attr: { title: "Favorite chat" }
     });
     (0, f.setIcon)(h, "star");
   }
-  o.createSpan({ text: t.title });
+  l.createSpan({ text: t.title });
   (s.addEventListener("click", () => {
     (this.plugin.switchThread(t.id), this.renderChatView());
   }),
-    a.createDiv({ cls: "pi-agent-thread-list-meta", text: this.formatThreadMeta(t, n) }));
-  let l = s.createDiv({ cls: "pi-agent-thread-list-actions" }),
-    d = l.createEl("button", {
-      cls: `clickable-icon pi-agent-thread-list-action pi-agent-thread-favorite${t.favorite ? " is-favorite" : ""}`,
-      attr: {
-        "aria-label": t.favorite ? "Remove favorite" : "Mark as favorite",
-        title: t.favorite ? "Remove favorite" : "Mark as favorite"
-      }
-    }),
-    h = l.createEl("button", {
+    o.createDiv({ cls: "pi-agent-thread-list-meta", text: this.formatThreadMeta(t, n) }));
+  let d = s.createDiv({ cls: "pi-agent-thread-list-actions" }),
+    h = d.createEl("button", {
       cls: "clickable-icon pi-agent-thread-list-action",
       attr: { "aria-label": "Thread actions", title: "Thread actions" }
     });
-  ((0, f.setIcon)(d, t.favorite ? "star" : "star"),
-    d.addEventListener("click", (u) => {
-      (u.preventDefault(), u.stopPropagation(), this.toggleThreadFavorite(t));
-    }),
-    (0, f.setIcon)(h, "more-horizontal"),
+  ((0, f.setIcon)(h, "more-vertical"),
     h.addEventListener("click", (u) => {
-      (u.preventDefault(), u.stopPropagation(), this.showThreadRowMenu(u, t, n, o));
+      (u.preventDefault(), u.stopPropagation(), this.showThreadRowMenu(u, t, n, l));
     }));
 }
 

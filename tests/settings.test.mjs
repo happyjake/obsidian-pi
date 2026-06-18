@@ -30,9 +30,10 @@ describe("plugin settings helpers", () => {
     });
   });
 
-  it("prioritizes preferred models before the full model list", () => {
+  it("prioritizes Pi scoped models before the full model list", () => {
     const options = getModelOptions({
       ...DEFAULT_SETTINGS,
+      scopedModels: ["openrouter/anthropic/claude-sonnet-4.5"],
       availableModels: [
         { ...model, slug: "astra/kimi-k2", displayName: "astra: kimi-k2" },
         {
@@ -50,9 +51,9 @@ describe("plugin settings helpers", () => {
 
     expect(Object.keys(options).slice(0, 4)).toEqual([
       "",
-      "openrouter/openai/gpt-5.5",
       "openrouter/anthropic/claude-sonnet-4.5",
-      "astra/kimi-k2"
+      "astra/kimi-k2",
+      "openrouter/openai/gpt-5.5"
     ]);
   });
 
@@ -92,6 +93,7 @@ describe("plugin settings helpers", () => {
       maxChangeSnapshotFiles: 0,
       ignoredFolders: ["", ".git"],
       piExecutablePath: " /custom/bin/pi ",
+      favoriteModels: ["", " provider/model "],
       includeDefaultSkills: undefined,
       dismissedPiSetup: true
     });
@@ -100,9 +102,11 @@ describe("plugin settings helpers", () => {
       sandboxMode: "edit",
       ignoredFolders: [".git"],
       piExecutablePath: "/custom/bin/pi",
+      scopedModels: ["provider/model"],
       includeDefaultSkills: true,
       dismissedPiSetup: true
     });
+    expect(settings).not.toHaveProperty("favoriteModels");
     expect(settings).not.toHaveProperty("maxSearchResults");
     expect(settings).not.toHaveProperty("maxSearchFiles");
     expect(settings).not.toHaveProperty("maxFileChars");

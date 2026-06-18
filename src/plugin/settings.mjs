@@ -1,3 +1,5 @@
+import { getEnabledModelPatternId } from "../pi/model-catalog.mjs";
+
 export const CUSTOM_MODEL_VALUE = "__custom";
 
 const EMPTY_MODEL_OPTIONS = {
@@ -15,20 +17,6 @@ const REASONING_LABELS = {
   xhigh: "XHigh - deepest"
 };
 
-const PREFERRED_MODEL_PATTERNS = [
-  /(?:^|\/)gpt-5\.5$/i,
-  /(?:^|\/)gpt-5\.5-pro$/i,
-  /(?:^|\/)claude-haiku-4\.5$/i,
-  /(?:^|\/)claude-opus-4\.5$/i,
-  /(?:^|\/)claude-opus-4\.6$/i,
-  /(?:^|\/)claude-opus-4\.7$/i,
-  /(?:^|\/)claude-opus-4\.8$/i,
-  /(?:^|\/)claude-sonnet-4$/i,
-  /(?:^|\/)claude-sonnet-4\.5$/i,
-  /(?:^|\/)claude-sonnet-4\.6$/i,
-  /(?:^|\/)gemini-2\.5-pro$/i
-];
-
 export const DEFAULT_SETTINGS = {
   model: "",
   customModel: "",
@@ -36,6 +24,7 @@ export const DEFAULT_SETTINGS = {
   sandboxMode: "read-only",
   acknowledgedToolRisk: false,
   availableModels: [],
+  scopedModels: [],
   dryRun: false,
   ignoredFolders: [".obsidian", ".git", "node_modules", "Templates"],
   customInstructions: "",
@@ -53,6 +42,8 @@ export function normalizeSettings(rawSettings = {}) {
     maxSearchFiles: _maxSearchFiles,
     maxFileChars: _maxFileChars,
     maxChangeSnapshotFiles: _maxChangeSnapshotFiles,
+    favoriteModels: legacyFavoriteModels,
+    scopedModels: rawScopedModels,
     ...supportedSettings
   } = rawSettings;
   const settings = { ...DEFAULT_SETTINGS, ...supportedSettings };
@@ -65,6 +56,10 @@ export function normalizeSettings(rawSettings = {}) {
   settings.availableModels = Array.isArray(settings.availableModels)
     ? settings.availableModels
     : [];
+  settings.scopedModels = normalizeStringList(
+    rawScopedModels ?? legacyFavoriteModels,
+    DEFAULT_SETTINGS.scopedModels
+  );
   settings.dryRun = false;
   settings.ignoredFolders = normalizeStringList(
     settings.ignoredFolders,
@@ -88,7 +83,7 @@ export function getModelOptions(settings) {
   if (models.length === 0)
     return { ...EMPTY_MODEL_OPTIONS, ...options, [CUSTOM_MODEL_VALUE]: "Custom model ID" };
 
-  for (const model of sortModelsForPicker(models))
+  for (const model of sortModelsForPicker(models, settings.scopedModels))
     options[model.slug] = formatModelOptionLabel(model);
   options[CUSTOM_MODEL_VALUE] = "Custom model ID";
 
@@ -153,19 +148,14 @@ function normalizeToolMode(value) {
       : DEFAULT_SETTINGS.sandboxMode;
 }
 
-function sortModelsForPicker(models) {
+function sortModelsForPicker(models, scopedModels = []) {
+  const scoped = new Set(scopedModels.map((model) => getEnabledModelPatternId(model)));
   return [...models].sort((left, right) => {
-    const leftRank = getPreferredModelRank(left);
-    const rightRank = getPreferredModelRank(right);
-    if (leftRank !== rightRank) return leftRank - rightRank;
+    const leftScoped = scoped.has(left.slug);
+    const rightScoped = scoped.has(right.slug);
+    if (leftScoped !== rightScoped) return leftScoped ? -1 : 1;
     return left.slug.localeCompare(right.slug);
   });
-}
-
-function getPreferredModelRank(model) {
-  const searchable = `${model.slug} ${model.displayName}`;
-  const rank = PREFERRED_MODEL_PATTERNS.findIndex((pattern) => pattern.test(searchable));
-  return rank === -1 ? PREFERRED_MODEL_PATTERNS.length : rank;
 }
 
 function formatModelOptionLabel(model) {

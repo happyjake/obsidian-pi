@@ -1,5 +1,10 @@
 import * as f from "obsidian";
-import { formatContextUsageBadge, formatTokenCount } from "../pi/token-usage.mjs";
+import {
+  calculateContextTokens,
+  formatContextUsageTitle,
+  formatPercent,
+  formatTokenCount
+} from "../pi/token-usage.mjs";
 import {
   PI_AGENT_DISPLAY_NAME as Ce,
   PI_AGENT_ICON_ID as I,
@@ -365,24 +370,56 @@ export class PiAgentView extends f.ItemView {
   }
   renderToolBadgesContextUsage(e) {
     let t = this.getDisplayedContextUsage(),
-      n = t?.compacted
-        ? {
-            label: `ctx compacted · ?/${formatTokenCount(t.contextWindow || 0)}`,
-            title:
-              "Pi compacted this session. Exact context usage is unknown until the next model response returns fresh token usage."
-          }
-        : t
-          ? formatContextUsageBadge(t.contextUsage, t.tokenUsage)
-          : void 0;
-    e.createSpan({
-      cls: `pi-agent-tool-badge pi-agent-tool-badge-context${n ? " is-enabled" : ""}`,
-      text: n ? n.label : "ctx --",
-      attr: {
-        title: n
-          ? n.title
-          : "Context usage appears after Pi returns token usage for the selected model."
-      }
-    });
+      n = this.getContextUsageMeter(t),
+      s = e.createSpan({
+        cls: `pi-agent-context-meter${n ? " is-enabled" : ""}${t?.compacted ? " is-compacted" : ""}`,
+        attr: {
+          title: n
+            ? n.title
+            : "Context usage appears after Pi returns token usage for the selected model."
+        }
+      }),
+      a = s.createSpan({ cls: "pi-agent-context-meter-track", attr: { "aria-hidden": "true" } });
+    (a.createSpan({
+      cls: "pi-agent-context-meter-fill",
+      attr: { style: `width: ${n ? n.width : 0}%` }
+    }),
+      s.createSpan({ cls: "pi-agent-context-meter-label", text: n ? n.label : "-- / -- · --" }));
+  }
+  getContextUsageMeter(e) {
+    if (!e) return void 0;
+    if (e.compacted) {
+      let t = e.contextWindow || 0;
+      return {
+        label: `compacted / ${t > 0 ? formatTokenCount(t) : "?"} · ?`,
+        title:
+          "Pi compacted this session. Exact context usage is unknown until the next model response returns fresh token usage.",
+        width: 0
+      };
+    }
+    if (!e.contextUsage) return void 0;
+    let t = e.contextUsage,
+      n = t.contextWindow > 0,
+      s = n && t.tokens > 0 ? Math.max(3, Math.min(100, t.percent || 0)) : 0,
+      a = n
+        ? `${this.formatContextMeterTokenCount(t.tokens)} / ${this.formatContextMeterTokenCount(
+            t.contextWindow
+          )} · ${formatPercent(t.percent)}`
+        : `${this.formatContextMeterTokenCount(t.tokens)} / ? · ?`,
+      o = e.tokenUsage,
+      l = o
+        ? `${formatContextUsageTitle(t, o)}\n\nInput: ${formatTokenCount(
+            calculateContextTokens(o)
+          )} tokens\nOutput: ${formatTokenCount(o.output || 0)} tokens`
+        : formatContextUsageTitle(t, o);
+    return {
+      label: a,
+      title: l,
+      width: s
+    };
+  }
+  formatContextMeterTokenCount(e) {
+    return formatTokenCount(e).toLowerCase();
   }
   getDisplayedContextUsage() {
     var n;

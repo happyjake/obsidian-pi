@@ -45,6 +45,448 @@ module.exports = __toCommonJS(main_exports);
 var import_node_fs6 = __toESM(require("node:fs"), 1);
 var P = __toESM(require("obsidian"), 1);
 
+// src/pi/model-catalog.mjs
+var import_node_child_process = require("node:child_process");
+var import_node_fs2 = __toESM(require("node:fs"), 1);
+var import_node_os = __toESM(require("node:os"), 1);
+var import_node_path2 = __toESM(require("node:path"), 1);
+
+// src/pi/diagnostics.mjs
+var PI_INSTALL_COMMAND = "npm install -g @earendil-works/pi-coding-agent";
+var PI_CLI_MISSING_MESSAGE = `Pi CLI was not found. Install it with \`${PI_INSTALL_COMMAND}\`, then restart Obsidian so it can find \`pi\` on PATH.`;
+var NODE_RUNTIME_MISSING_MESSAGE =
+  "Pi CLI was found, but Node.js is not available to Obsidian. Install Node.js, then fully restart Obsidian. If you use nvm, fnm, asdf, or another version manager, make sure its Node bin directory is available to GUI apps or install Node with Homebrew/the official installer.";
+var NODE_RUNTIME_MISSING_PATTERNS = [
+  /env:\s*node:\s*No such file or directory/i,
+  /usr\/bin\/env:\s*['"]?node['"]?:\s*No such file or directory/i,
+  /\/usr\/bin\/env:\s*node:\s*No such file or directory/i,
+  /spawn\s+node\s+ENOENT/i
+];
+function createPiCliError(options = {}) {
+  return new Error(formatPiCliFailure(options));
+}
+function formatPiCliFailure(options = {}) {
+  return diagnosePiCliFailure(options).message;
+}
+function diagnosePiCliFailure({
+  context = "Could not run Pi CLI",
+  error,
+  stderr,
+  stdout,
+  exitCode
+} = {}) {
+  const text = getCombinedErrorText(error, stderr, stdout);
+  if (isPiCliMissing(error)) return { kind: "pi-missing", message: PI_CLI_MISSING_MESSAGE };
+  if (isNodeRuntimeMissing(text)) {
+    return { kind: "node-missing", message: NODE_RUNTIME_MISSING_MESSAGE };
+  }
+  const detail =
+    text || (typeof exitCode === "number" ? `Pi exited with code ${exitCode}.` : "Unknown error.");
+  return { kind: "generic", message: `${context}: ${detail}` };
+}
+function isNodeRuntimeMissing(text = "") {
+  return NODE_RUNTIME_MISSING_PATTERNS.some((pattern) => pattern.test(text));
+}
+function isPiCliMissing(error) {
+  return error && error.code === "ENOENT";
+}
+function getCombinedErrorText(error, stderr, stdout) {
+  return [getErrorMessage(error), stderr, stdout]
+    .filter(Boolean)
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .join("\n");
+}
+function getErrorMessage(error) {
+  if (!error) return "";
+  return error instanceof Error ? error.message : String(error);
+}
+
+// src/pi/environment.mjs
+var import_node_fs = __toESM(require("node:fs"), 1);
+var import_node_path = __toESM(require("node:path"), 1);
+var POSIX_PI_CANDIDATES = ["/opt/homebrew/bin/pi", "/usr/local/bin/pi", "/usr/bin/pi"];
+var WINDOWS_PI_CANDIDATES = ["pi.cmd", "pi.exe", "pi"];
+var POSIX_PATH_CANDIDATES = [
+  "/opt/homebrew/bin",
+  "/usr/local/bin",
+  "/usr/bin",
+  "/bin",
+  "/usr/sbin",
+  "/sbin"
+];
+function findPiExecutable(configuredPath = "") {
+  const configuredExecutable = normalizePiExecutablePath(configuredPath);
+  if (configuredExecutable) return configuredExecutable;
+  if (process.platform === "win32") return WINDOWS_PI_CANDIDATES[0];
+  for (const candidate of POSIX_PI_CANDIDATES) {
+    if (import_node_fs.default.existsSync(candidate)) return candidate;
+  }
+  const piNode = findPiNodeExecutable();
+  if (piNode) return piNode;
+  return "pi";
+}
+function normalizePiExecutablePath(executablePath) {
+  const normalizedPath = typeof executablePath === "string" ? executablePath.trim() : "";
+  if (!normalizedPath) return "";
+  return expandEnvironmentVariables(expandHomeDirectory(normalizedPath));
+}
+function expandHomeDirectory(executablePath) {
+  const home = process.env.HOME;
+  if (!home) return executablePath;
+  if (executablePath === "~") return home;
+  return executablePath.startsWith(`~${import_node_path.default.sep}`)
+    ? import_node_path.default.join(home, executablePath.slice(2))
+    : executablePath;
+}
+function expandEnvironmentVariables(executablePath) {
+  return executablePath.replace(/\$(\w+)|\$\{([^}]+)\}/g, (match, name, bracedName) => {
+    const value = process.env[name || bracedName];
+    return value === void 0 ? match : value;
+  });
+}
+function findPiNodeExecutable() {
+  const home = process.env.HOME;
+  if (!home) return null;
+  const root = import_node_path.default.join(home, ".local", "share", "pi-node");
+  try {
+    const versions = import_node_fs.default
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => import_node_path.default.join(root, d.name));
+    for (const v of versions) {
+      const candidate = import_node_path.default.join(v, "bin", "pi");
+      if (import_node_fs.default.existsSync(candidate)) return candidate;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+function buildPiProcessInvocation(piExecutable, args = [], options = {}) {
+  const processOptions = buildPiProcessOptions(piExecutable, options);
+  return shouldUseWindowsCommandShell(piExecutable)
+    ? {
+        command: process.env.ComSpec || "cmd.exe",
+        args: ["/d", "/s", "/c", quoteWindowsCommand([piExecutable, ...args])],
+        options: {
+          ...processOptions,
+          windowsVerbatimArguments: true
+        }
+      }
+    : {
+        command: piExecutable,
+        args,
+        options: processOptions
+      };
+}
+function buildPiProcessOptions(piExecutable = findPiExecutable(), options = {}) {
+  return {
+    ...options,
+    env: buildPiProcessEnv(piExecutable)
+  };
+}
+function buildPiProcessEnv(piExecutable = findPiExecutable()) {
+  if (process.platform === "win32") return process.env;
+  return {
+    ...process.env,
+    PATH: buildPosixPath(piExecutable)
+  };
+}
+function shouldUseWindowsCommandShell(piExecutable) {
+  return process.platform === "win32" && !/\.exe$/i.test(piExecutable);
+}
+function quoteWindowsCommand(parts) {
+  const command = parts.map((part) => `"${String(part).replace(/"/g, '""')}"`).join(" ");
+  return `"${command}"`;
+}
+function buildPosixPath(piExecutable) {
+  return uniqueExistingDirectories([
+    ...getExecutableDirectory(piExecutable),
+    ...POSIX_PATH_CANDIDATES,
+    ...getPiNodePaths(),
+    ...getNodeVersionManagerDirectories(),
+    ...getExistingPathEntries()
+  ]).join(import_node_path.default.delimiter);
+}
+function getPiNodePaths() {
+  const home = process.env.HOME;
+  if (!home) return [];
+  const root = import_node_path.default.join(home, ".local", "share", "pi-node");
+  try {
+    return import_node_fs.default
+      .readdirSync(root, { withFileTypes: true })
+      .filter((d) => d.isDirectory())
+      .map((d) => import_node_path.default.join(root, d.name, "bin"));
+  } catch {
+    return [];
+  }
+}
+function getExistingPathEntries() {
+  return (process.env.PATH ?? "").split(import_node_path.default.delimiter).filter(Boolean);
+}
+function getExecutableDirectory(executable) {
+  return import_node_path.default.isAbsolute(executable)
+    ? [import_node_path.default.dirname(executable)]
+    : [];
+}
+function getNodeVersionManagerDirectories() {
+  const home = process.env.HOME;
+  if (!home) return [];
+  return [
+    ...getNvmNodeBinDirectories(import_node_path.default.join(home, ".nvm", "versions", "node")),
+    ...getFnmNodeBinDirectories(import_node_path.default.join(home, ".fnm", "node-versions")),
+    import_node_path.default.join(home, ".asdf", "shims"),
+    import_node_path.default.join(home, ".volta", "bin")
+  ];
+}
+function getNvmNodeBinDirectories(root) {
+  return getChildDirectories(root).map((directory) =>
+    import_node_path.default.join(directory, "bin")
+  );
+}
+function getFnmNodeBinDirectories(root) {
+  return getChildDirectories(root).map((directory) =>
+    import_node_path.default.join(directory, "installation", "bin")
+  );
+}
+function getChildDirectories(root) {
+  try {
+    return import_node_fs.default
+      .readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => import_node_path.default.join(root, entry.name));
+  } catch {
+    return [];
+  }
+}
+function uniqueExistingDirectories(directories) {
+  const seen = /* @__PURE__ */ new Set();
+  return directories.filter((directory) => {
+    if (!directory || seen.has(directory) || !import_node_fs.default.existsSync(directory))
+      return false;
+    seen.add(directory);
+    return true;
+  });
+}
+
+// src/pi/model-catalog.mjs
+var REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+var ENABLED_MODELS_KEY = "enabledModels";
+var ESCAPE_CHARACTER = String.fromCharCode(27);
+var ANSI_ESCAPE_PATTERN = new RegExp(`${ESCAPE_CHARACTER}\\[[0-9;?]*[ -/]*[@-~]`, "g");
+var PiModelCatalog = class {
+  constructor(pluginDirectory, settings = {}) {
+    this.pluginDirectory = pluginDirectory;
+    this.settings = settings;
+  }
+  async getAvailableModels() {
+    const piExecutable = findPiExecutable(this.settings.piExecutablePath);
+    const output = await this.execPi(piExecutable, ["--list-models"]);
+    return parseModelCatalog(output);
+  }
+  getEffectiveConfig(vaultBasePath) {
+    return getEffectiveConfig(vaultBasePath);
+  }
+  execPi(command, args) {
+    return new Promise((resolve, reject) => {
+      const invocation = buildPiProcessInvocation(command, args, { timeout: 2e4 });
+      (0, import_node_child_process.execFile)(
+        invocation.command,
+        invocation.args,
+        invocation.options,
+        (error, stdout, stderr) => {
+          if (error) {
+            reject(
+              new Error(
+                formatPiCliFailure({
+                  context: "Could not query Pi model registry",
+                  error,
+                  stderr,
+                  stdout
+                })
+              )
+            );
+            return;
+          }
+          resolve(stdout || stderr);
+        }
+      );
+    });
+  }
+};
+function parseModelCatalog(output) {
+  return output
+    .replace(ANSI_ESCAPE_PATTERN, "")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => !line.startsWith("provider"))
+    .map((line) => line.split(/\s{2,}/))
+    .filter((parts) => parts.length >= 5)
+    .map((parts) => {
+      const provider = parts[0];
+      const model = parts[1];
+      const supportedReasoningLevels = normalizeReasoningLevels(parts[4]);
+      return {
+        slug: `${provider}/${model}`,
+        displayName: `${provider}: ${model}`,
+        contextWindow: parseTokenAmount(parts[2]),
+        maxOutputTokens: parseTokenAmount(parts[3]),
+        defaultReasoningLevel: supportedReasoningLevels.includes("medium")
+          ? "medium"
+          : supportedReasoningLevels[0] || "off",
+        supportedReasoningLevels
+      };
+    });
+}
+function parseTokenAmount(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toUpperCase();
+  const match = normalized.match(/^(\d+(?:\.\d+)?)([KMB])?$/);
+  if (!match) return 0;
+  const amount = Number.parseFloat(match[1]);
+  const multiplier = match[2] === "B" ? 1e9 : match[2] === "M" ? 1e6 : match[2] === "K" ? 1e3 : 1;
+  return Math.round(amount * multiplier);
+}
+function normalizeReasoningLevels(value) {
+  const normalized = String(value || "")
+    .trim()
+    .toLowerCase();
+  return !normalized || normalized === "no" || normalized === "false"
+    ? ["off"]
+    : normalized === "yes" || normalized === "true"
+      ? [...REASONING_LEVELS]
+      : normalized
+          .split(/[/,|]+/)
+          .map((level) => level.trim())
+          .filter(Boolean)
+          .filter((level) => REASONING_LEVELS.includes(level));
+}
+function getEffectiveConfig(vaultBasePath) {
+  const globalSettings = readJsonFile(getPiAgentSettingsPath());
+  const vaultSettingsPath = vaultBasePath
+    ? import_node_path2.default.join(vaultBasePath, ".pi", "settings.json")
+    : "";
+  const vaultSettings = readJsonFile(vaultSettingsPath);
+  const settings = { ...globalSettings, ...vaultSettings };
+  const defaultModel = settings.defaultModel ? String(settings.defaultModel) : "";
+  const defaultProvider = settings.defaultProvider ? String(settings.defaultProvider) : "";
+  const effectiveModel = defaultModel
+    ? defaultModel.includes("/")
+      ? defaultModel
+      : defaultProvider
+        ? `${defaultProvider}/${defaultModel}`
+        : defaultModel
+    : "";
+  const effectiveReasoning = settings.defaultThinkingLevel
+    ? String(settings.defaultThinkingLevel)
+    : "";
+  const scopedModels = normalizeEnabledModels(
+    getScopedModelSetting(vaultSettings) ?? getScopedModelSetting(globalSettings)
+  );
+  return { effectiveModel, effectiveReasoning, scopedModels };
+}
+function getPiAgentSettingsPath() {
+  return import_node_path2.default.join(
+    process.env.PI_CODING_AGENT_DIR ||
+      import_node_path2.default.join(import_node_os.default.homedir(), ".pi", "agent"),
+    "settings.json"
+  );
+}
+function writePiEnabledModels(modelPatterns, settingsPath = getPiAgentSettingsPath()) {
+  const settings = readJsonFileForWrite(settingsPath);
+  const enabledModels = normalizeEnabledModels(modelPatterns);
+  if (enabledModels.length > 0) settings[ENABLED_MODELS_KEY] = enabledModels;
+  else delete settings[ENABLED_MODELS_KEY];
+  delete settings.scopedModels;
+  delete settings.scoped_models;
+  delete settings["scoped-models"];
+  import_node_fs2.default.mkdirSync(import_node_path2.default.dirname(settingsPath), {
+    recursive: true
+  });
+  import_node_fs2.default.writeFileSync(
+    settingsPath,
+    `${JSON.stringify(settings, null, 2)}
+`,
+    { mode: 384 }
+  );
+  return enabledModels;
+}
+function normalizeEnabledModels(value) {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,\n]/)
+      : value == null
+        ? []
+        : [value];
+  const seen = /* @__PURE__ */ new Set();
+  const normalized = [];
+  for (const item of values) {
+    const model = normalizeEnabledModel(item);
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    normalized.push(model);
+  }
+  return normalized;
+}
+function getEnabledModelPatternId(value) {
+  const model = String(value || "").trim();
+  const parts = model.split(":");
+  const suffix = parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+  return REASONING_LEVELS.includes(suffix) ? parts.slice(0, -1).join(":") : model;
+}
+function readJsonFile(filePath) {
+  try {
+    return filePath && import_node_fs2.default.existsSync(filePath)
+      ? JSON.parse(import_node_fs2.default.readFileSync(filePath, "utf8"))
+      : {};
+  } catch {
+    return {};
+  }
+}
+function readJsonFileForWrite(filePath) {
+  if (!filePath || !import_node_fs2.default.existsSync(filePath)) return {};
+  try {
+    return JSON.parse(import_node_fs2.default.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read Pi settings at ${filePath}: ${message}`, { cause: error });
+  }
+}
+function getScopedModelSetting(settings) {
+  if (Object.prototype.hasOwnProperty.call(settings, ENABLED_MODELS_KEY))
+    return settings[ENABLED_MODELS_KEY];
+  if (Object.prototype.hasOwnProperty.call(settings, "scopedModels")) return settings.scopedModels;
+  if (Object.prototype.hasOwnProperty.call(settings, "scoped_models"))
+    return settings.scoped_models;
+  if (Object.prototype.hasOwnProperty.call(settings, "scoped-models"))
+    return settings["scoped-models"];
+  return void 0;
+}
+function normalizeEnabledModel(value) {
+  if (typeof value === "string") return value.trim();
+  if (value && typeof value === "object") {
+    if (typeof value.pattern === "string") return value.pattern.trim();
+    if (typeof value.id === "string" && typeof value.provider === "string") {
+      return `${value.provider.trim()}/${value.id.trim()}`;
+    }
+    if (typeof value.model === "string") {
+      return value.provider
+        ? `${String(value.provider).trim()}/${value.model.trim()}`
+        : value.model.trim();
+    }
+    if (value.model && typeof value.model === "object") {
+      const provider = typeof value.model.provider === "string" ? value.model.provider.trim() : "";
+      const id = typeof value.model.id === "string" ? value.model.id.trim() : "";
+      return provider && id ? `${provider}/${id}` : id;
+    }
+  }
+  return "";
+}
+
 // src/plugin/settings.mjs
 var CUSTOM_MODEL_VALUE = "__custom";
 var EMPTY_MODEL_OPTIONS = {
@@ -60,19 +502,6 @@ var REASONING_LABELS = {
   high: "High",
   xhigh: "XHigh - deepest"
 };
-var PREFERRED_MODEL_PATTERNS = [
-  /(?:^|\/)gpt-5\.5$/i,
-  /(?:^|\/)gpt-5\.5-pro$/i,
-  /(?:^|\/)claude-haiku-4\.5$/i,
-  /(?:^|\/)claude-opus-4\.5$/i,
-  /(?:^|\/)claude-opus-4\.6$/i,
-  /(?:^|\/)claude-opus-4\.7$/i,
-  /(?:^|\/)claude-opus-4\.8$/i,
-  /(?:^|\/)claude-sonnet-4$/i,
-  /(?:^|\/)claude-sonnet-4\.5$/i,
-  /(?:^|\/)claude-sonnet-4\.6$/i,
-  /(?:^|\/)gemini-2\.5-pro$/i
-];
 var DEFAULT_SETTINGS = {
   model: "",
   customModel: "",
@@ -80,6 +509,7 @@ var DEFAULT_SETTINGS = {
   sandboxMode: "read-only",
   acknowledgedToolRisk: false,
   availableModels: [],
+  scopedModels: [],
   dryRun: false,
   ignoredFolders: [".obsidian", ".git", "node_modules", "Templates"],
   customInstructions: "",
@@ -96,6 +526,8 @@ function normalizeSettings(rawSettings = {}) {
     maxSearchFiles: _maxSearchFiles,
     maxFileChars: _maxFileChars,
     maxChangeSnapshotFiles: _maxChangeSnapshotFiles,
+    favoriteModels: legacyFavoriteModels,
+    scopedModels: rawScopedModels,
     ...supportedSettings
   } = rawSettings;
   const settings = { ...DEFAULT_SETTINGS, ...supportedSettings };
@@ -107,6 +539,10 @@ function normalizeSettings(rawSettings = {}) {
   settings.availableModels = Array.isArray(settings.availableModels)
     ? settings.availableModels
     : [];
+  settings.scopedModels = normalizeStringList(
+    rawScopedModels ?? legacyFavoriteModels,
+    DEFAULT_SETTINGS.scopedModels
+  );
   settings.dryRun = false;
   settings.ignoredFolders = normalizeStringList(
     settings.ignoredFolders,
@@ -126,7 +562,7 @@ function getModelOptions(settings) {
   const options = { "": "Use Pi default" };
   if (models.length === 0)
     return { ...EMPTY_MODEL_OPTIONS, ...options, [CUSTOM_MODEL_VALUE]: "Custom model ID" };
-  for (const model of sortModelsForPicker(models))
+  for (const model of sortModelsForPicker(models, settings.scopedModels))
     options[model.slug] = formatModelOptionLabel(model);
   options[CUSTOM_MODEL_VALUE] = "Custom model ID";
   return options;
@@ -177,18 +613,14 @@ function normalizeToolMode(value) {
       ? "edit"
       : DEFAULT_SETTINGS.sandboxMode;
 }
-function sortModelsForPicker(models) {
+function sortModelsForPicker(models, scopedModels = []) {
+  const scoped = new Set(scopedModels.map((model) => getEnabledModelPatternId(model)));
   return [...models].sort((left, right) => {
-    const leftRank = getPreferredModelRank(left);
-    const rightRank = getPreferredModelRank(right);
-    if (leftRank !== rightRank) return leftRank - rightRank;
+    const leftScoped = scoped.has(left.slug);
+    const rightScoped = scoped.has(right.slug);
+    if (leftScoped !== rightScoped) return leftScoped ? -1 : 1;
     return left.slug.localeCompare(right.slug);
   });
-}
-function getPreferredModelRank(model) {
-  const searchable = `${model.slug} ${model.displayName}`;
-  const rank = PREFERRED_MODEL_PATTERNS.findIndex((pattern) => pattern.test(searchable));
-  return rank === -1 ? PREFERRED_MODEL_PATTERNS.length : rank;
 }
 function formatModelOptionLabel(model) {
   const details = [
@@ -200,8 +632,8 @@ function formatModelOptionLabel(model) {
 }
 
 // src/context/prompt-templates.mjs
-var import_node_fs = __toESM(require("node:fs"), 1);
-var import_node_path = __toESM(require("node:path"), 1);
+var import_node_fs3 = __toESM(require("node:fs"), 1);
+var import_node_path3 = __toESM(require("node:path"), 1);
 var PROMPT_TEMPLATE_NAME_PATTERN = /^[A-Za-z0-9_-]+$/;
 var RESERVED_SLASH_COMMANDS = /* @__PURE__ */ new Set([
   "backlinks",
@@ -235,22 +667,24 @@ function getPromptTemplateSlashCommands(basePath) {
   }));
 }
 function discoverPromptTemplates(basePath) {
-  const promptsDir = basePath ? import_node_path.default.join(basePath, ".pi", "prompts") : "";
+  const promptsDir = basePath ? import_node_path3.default.join(basePath, ".pi", "prompts") : "";
   if (!promptsDir) return [];
   try {
-    return import_node_fs.default
+    return import_node_fs3.default
       .readdirSync(promptsDir, { withFileTypes: true })
       .filter(
         (entry) =>
           entry.isFile() &&
           entry.name.toLowerCase().endsWith(".md") &&
-          PROMPT_TEMPLATE_NAME_PATTERN.test(import_node_path.default.basename(entry.name, ".md")) &&
+          PROMPT_TEMPLATE_NAME_PATTERN.test(
+            import_node_path3.default.basename(entry.name, ".md")
+          ) &&
           !RESERVED_SLASH_COMMANDS.has(
-            import_node_path.default.basename(entry.name, ".md").toLowerCase()
+            import_node_path3.default.basename(entry.name, ".md").toLowerCase()
           )
       )
       .map((entry) =>
-        readPromptTemplate(import_node_path.default.join(promptsDir, entry.name), basePath)
+        readPromptTemplate(import_node_path3.default.join(promptsDir, entry.name), basePath)
       )
       .filter(Boolean)
       .sort((a, b) => a.command.localeCompare(b.command));
@@ -261,7 +695,7 @@ function discoverPromptTemplates(basePath) {
 async function findPromptTemplate(basePath, name) {
   if (!basePath || !PROMPT_TEMPLATE_NAME_PATTERN.test(name)) return void 0;
   return readPromptTemplateFile(
-    import_node_path.default.join(basePath, ".pi", "prompts", `${name}.md`),
+    import_node_path3.default.join(basePath, ".pi", "prompts", `${name}.md`),
     basePath
   );
 }
@@ -270,7 +704,7 @@ function readPromptTemplate(filePath, basePath) {
     return createPromptTemplate(
       filePath,
       basePath,
-      import_node_fs.default.readFileSync(filePath, "utf8")
+      import_node_fs3.default.readFileSync(filePath, "utf8")
     );
   } catch {
     return void 0;
@@ -281,7 +715,7 @@ async function readPromptTemplateFile(filePath, basePath) {
     return createPromptTemplate(
       filePath,
       basePath,
-      await import_node_fs.default.promises.readFile(filePath, "utf8")
+      await import_node_fs3.default.promises.readFile(filePath, "utf8")
     );
   } catch {
     return void 0;
@@ -289,12 +723,12 @@ async function readPromptTemplateFile(filePath, basePath) {
 }
 function createPromptTemplate(filePath, basePath, raw) {
   const parsed = parsePromptTemplateContent(raw);
-  const name = import_node_path.default.basename(filePath, ".md");
+  const name = import_node_path3.default.basename(filePath, ".md");
   return {
     name,
     command: `/${name}`,
     path: filePath,
-    relativePath: basePath ? import_node_path.default.relative(basePath, filePath) : filePath,
+    relativePath: basePath ? import_node_path3.default.relative(basePath, filePath) : filePath,
     ...parsed
   };
 }
@@ -429,8 +863,8 @@ function dedupeReferences(references) {
 }
 
 // src/context/skills.mjs
-var import_node_fs2 = __toESM(require("node:fs"), 1);
-var import_node_path2 = __toESM(require("node:path"), 1);
+var import_node_fs4 = __toESM(require("node:fs"), 1);
+var import_node_path4 = __toESM(require("node:path"), 1);
 
 // src/shared/paths.mjs
 function normalizeVaultFolder(value, fallback = "Pi") {
@@ -507,8 +941,8 @@ function discoverSkills(settings, basePath) {
   }
   if (!settings || settings.includeDefaultSkills !== false) {
     if (basePath) {
-      addRoot(import_node_path2.default.join(basePath, ".pi", "skills"), 1);
-      addRoot(import_node_path2.default.join(basePath, ".agents", "skills"), 1);
+      addRoot(import_node_path4.default.join(basePath, ".pi", "skills"), 1);
+      addRoot(import_node_path4.default.join(basePath, ".agents", "skills"), 1);
     }
     for (const skillPath of getSettingsSkillPaths(basePath)) addRoot(skillPath, 1);
   }
@@ -527,15 +961,15 @@ function findSkillByName(settings, basePath, name) {
   return discoverSkills(settings, basePath).find((skill) => skill.name === name);
 }
 function readSkillContent(skillPath) {
-  return import_node_fs2.default.readFileSync(skillPath, "utf8");
+  return import_node_fs4.default.readFileSync(skillPath, "utf8");
 }
 function resolveSkillPath(skillPath, basePath) {
   let resolved = String(skillPath || "").trim();
   if (!resolved) return "";
   if (resolved.startsWith("~")) return "";
-  return import_node_path2.default.isAbsolute(resolved)
+  return import_node_path4.default.isAbsolute(resolved)
     ? resolved
-    : import_node_path2.default.join(basePath || "", resolved);
+    : import_node_path4.default.join(basePath || "", resolved);
 }
 function findSkillFiles(
   skillPath,
@@ -546,7 +980,7 @@ function findSkillFiles(
   if (!skillPath || results.length >= DEFAULT_SKILL_SEARCH_LIMIT) return results;
   let stats;
   try {
-    stats = import_node_fs2.default.statSync(skillPath);
+    stats = import_node_fs4.default.statSync(skillPath);
   } catch {
     return results;
   }
@@ -555,19 +989,19 @@ function findSkillFiles(
     return results;
   }
   if (!stats.isDirectory() || depth < 0) return results;
-  const directSkillFile = import_node_path2.default.join(skillPath, "SKILL.md");
+  const directSkillFile = import_node_path4.default.join(skillPath, "SKILL.md");
   try {
-    if (import_node_fs2.default.existsSync(directSkillFile)) results.push(directSkillFile);
+    if (import_node_fs4.default.existsSync(directSkillFile)) results.push(directSkillFile);
   } catch {}
   let entries;
   try {
-    entries = import_node_fs2.default.readdirSync(skillPath, { withFileTypes: true });
+    entries = import_node_fs4.default.readdirSync(skillPath, { withFileTypes: true });
   } catch {
     return results;
   }
   for (const entry of entries) {
     if (results.length >= DEFAULT_SKILL_SEARCH_LIMIT) break;
-    const childPath = import_node_path2.default.join(skillPath, entry.name);
+    const childPath = import_node_path4.default.join(skillPath, entry.name);
     if (entry.isDirectory()) {
       findSkillFiles(childPath, depth - 1, false, results);
     } else if (
@@ -581,7 +1015,7 @@ function findSkillFiles(
   return results;
 }
 function parseSkillFile(skillPath, sourceRank = 1) {
-  const content = import_node_fs2.default.readFileSync(skillPath, "utf8").slice(0, 8192);
+  const content = import_node_fs4.default.readFileSync(skillPath, "utf8").slice(0, 8192);
   const frontmatterMatch = content.match(/^---\s*\r?\n([\s\S]*?)\r?\n---/);
   const frontmatter = frontmatterMatch ? parseSkillFrontmatter(frontmatterMatch[1]) : {};
   const name = normalizeSkillName(frontmatter.name || inferSkillNameFromPath(skillPath));
@@ -650,15 +1084,15 @@ function getSettingsSkillPaths(basePath) {
   };
   if (basePath)
     collect(
-      readJsonFile(import_node_path2.default.join(basePath, ".pi", "settings.json")),
+      readJsonFile2(import_node_path4.default.join(basePath, ".pi", "settings.json")),
       basePath
     );
   return skillPaths.filter(Boolean);
 }
-function readJsonFile(filePath) {
+function readJsonFile2(filePath) {
   try {
-    return filePath && import_node_fs2.default.existsSync(filePath)
-      ? JSON.parse(import_node_fs2.default.readFileSync(filePath, "utf8"))
+    return filePath && import_node_fs4.default.existsSync(filePath)
+      ? JSON.parse(import_node_fs4.default.readFileSync(filePath, "utf8"))
       : {};
   } catch {
     return {};
@@ -671,9 +1105,9 @@ function cleanSkillYamlValue(value) {
     .replace(/^["]|["]$/g, "");
 }
 function inferSkillNameFromPath(skillPath) {
-  return import_node_path2.default.basename(skillPath).toLowerCase() === "skill.md"
-    ? import_node_path2.default.basename(import_node_path2.default.dirname(skillPath))
-    : import_node_path2.default.basename(skillPath, import_node_path2.default.extname(skillPath));
+  return import_node_path4.default.basename(skillPath).toLowerCase() === "skill.md"
+    ? import_node_path4.default.basename(import_node_path4.default.dirname(skillPath))
+    : import_node_path4.default.basename(skillPath, import_node_path4.default.extname(skillPath));
 }
 function inferSkillDescription(content, frontmatterMatch) {
   const body = frontmatterMatch ? content.slice(frontmatterMatch[0].length) : content;
@@ -1366,228 +1800,7 @@ var VaultGraph = class {
 };
 
 // src/pi/health.mjs
-var import_node_child_process = require("node:child_process");
-
-// src/pi/diagnostics.mjs
-var PI_INSTALL_COMMAND = "npm install -g @earendil-works/pi-coding-agent";
-var PI_CLI_MISSING_MESSAGE = `Pi CLI was not found. Install it with \`${PI_INSTALL_COMMAND}\`, then restart Obsidian so it can find \`pi\` on PATH.`;
-var NODE_RUNTIME_MISSING_MESSAGE =
-  "Pi CLI was found, but Node.js is not available to Obsidian. Install Node.js, then fully restart Obsidian. If you use nvm, fnm, asdf, or another version manager, make sure its Node bin directory is available to GUI apps or install Node with Homebrew/the official installer.";
-var NODE_RUNTIME_MISSING_PATTERNS = [
-  /env:\s*node:\s*No such file or directory/i,
-  /usr\/bin\/env:\s*['"]?node['"]?:\s*No such file or directory/i,
-  /\/usr\/bin\/env:\s*node:\s*No such file or directory/i,
-  /spawn\s+node\s+ENOENT/i
-];
-function createPiCliError(options = {}) {
-  return new Error(formatPiCliFailure(options));
-}
-function formatPiCliFailure(options = {}) {
-  return diagnosePiCliFailure(options).message;
-}
-function diagnosePiCliFailure({
-  context = "Could not run Pi CLI",
-  error,
-  stderr,
-  stdout,
-  exitCode
-} = {}) {
-  const text = getCombinedErrorText(error, stderr, stdout);
-  if (isPiCliMissing(error)) return { kind: "pi-missing", message: PI_CLI_MISSING_MESSAGE };
-  if (isNodeRuntimeMissing(text)) {
-    return { kind: "node-missing", message: NODE_RUNTIME_MISSING_MESSAGE };
-  }
-  const detail =
-    text || (typeof exitCode === "number" ? `Pi exited with code ${exitCode}.` : "Unknown error.");
-  return { kind: "generic", message: `${context}: ${detail}` };
-}
-function isNodeRuntimeMissing(text = "") {
-  return NODE_RUNTIME_MISSING_PATTERNS.some((pattern) => pattern.test(text));
-}
-function isPiCliMissing(error) {
-  return error && error.code === "ENOENT";
-}
-function getCombinedErrorText(error, stderr, stdout) {
-  return [getErrorMessage(error), stderr, stdout]
-    .filter(Boolean)
-    .map((value) => String(value).trim())
-    .filter(Boolean)
-    .join("\n");
-}
-function getErrorMessage(error) {
-  if (!error) return "";
-  return error instanceof Error ? error.message : String(error);
-}
-
-// src/pi/environment.mjs
-var import_node_fs3 = __toESM(require("node:fs"), 1);
-var import_node_path3 = __toESM(require("node:path"), 1);
-var POSIX_PI_CANDIDATES = ["/opt/homebrew/bin/pi", "/usr/local/bin/pi", "/usr/bin/pi"];
-var WINDOWS_PI_CANDIDATES = ["pi.cmd", "pi.exe", "pi"];
-var POSIX_PATH_CANDIDATES = [
-  "/opt/homebrew/bin",
-  "/usr/local/bin",
-  "/usr/bin",
-  "/bin",
-  "/usr/sbin",
-  "/sbin"
-];
-function findPiExecutable(configuredPath = "") {
-  const configuredExecutable = normalizePiExecutablePath(configuredPath);
-  if (configuredExecutable) return configuredExecutable;
-  if (process.platform === "win32") return WINDOWS_PI_CANDIDATES[0];
-  for (const candidate of POSIX_PI_CANDIDATES) {
-    if (import_node_fs3.default.existsSync(candidate)) return candidate;
-  }
-  const piNode = findPiNodeExecutable();
-  if (piNode) return piNode;
-  return "pi";
-}
-function normalizePiExecutablePath(executablePath) {
-  const normalizedPath = typeof executablePath === "string" ? executablePath.trim() : "";
-  if (!normalizedPath) return "";
-  return expandEnvironmentVariables(expandHomeDirectory(normalizedPath));
-}
-function expandHomeDirectory(executablePath) {
-  const home = process.env.HOME;
-  if (!home) return executablePath;
-  if (executablePath === "~") return home;
-  return executablePath.startsWith(`~${import_node_path3.default.sep}`)
-    ? import_node_path3.default.join(home, executablePath.slice(2))
-    : executablePath;
-}
-function expandEnvironmentVariables(executablePath) {
-  return executablePath.replace(/\$(\w+)|\$\{([^}]+)\}/g, (match, name, bracedName) => {
-    const value = process.env[name || bracedName];
-    return value === void 0 ? match : value;
-  });
-}
-function findPiNodeExecutable() {
-  const home = process.env.HOME;
-  if (!home) return null;
-  const root = import_node_path3.default.join(home, ".local", "share", "pi-node");
-  try {
-    const versions = import_node_fs3.default
-      .readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => import_node_path3.default.join(root, d.name));
-    for (const v of versions) {
-      const candidate = import_node_path3.default.join(v, "bin", "pi");
-      if (import_node_fs3.default.existsSync(candidate)) return candidate;
-    }
-  } catch {
-    return null;
-  }
-  return null;
-}
-function buildPiProcessInvocation(piExecutable, args = [], options = {}) {
-  const processOptions = buildPiProcessOptions(piExecutable, options);
-  return shouldUseWindowsCommandShell(piExecutable)
-    ? {
-        command: process.env.ComSpec || "cmd.exe",
-        args: ["/d", "/s", "/c", quoteWindowsCommand([piExecutable, ...args])],
-        options: {
-          ...processOptions,
-          windowsVerbatimArguments: true
-        }
-      }
-    : {
-        command: piExecutable,
-        args,
-        options: processOptions
-      };
-}
-function buildPiProcessOptions(piExecutable = findPiExecutable(), options = {}) {
-  return {
-    ...options,
-    env: buildPiProcessEnv(piExecutable)
-  };
-}
-function buildPiProcessEnv(piExecutable = findPiExecutable()) {
-  if (process.platform === "win32") return process.env;
-  return {
-    ...process.env,
-    PATH: buildPosixPath(piExecutable)
-  };
-}
-function shouldUseWindowsCommandShell(piExecutable) {
-  return process.platform === "win32" && !/\.exe$/i.test(piExecutable);
-}
-function quoteWindowsCommand(parts) {
-  const command = parts.map((part) => `"${String(part).replace(/"/g, '""')}"`).join(" ");
-  return `"${command}"`;
-}
-function buildPosixPath(piExecutable) {
-  return uniqueExistingDirectories([
-    ...getExecutableDirectory(piExecutable),
-    ...POSIX_PATH_CANDIDATES,
-    ...getPiNodePaths(),
-    ...getNodeVersionManagerDirectories(),
-    ...getExistingPathEntries()
-  ]).join(import_node_path3.default.delimiter);
-}
-function getPiNodePaths() {
-  const home = process.env.HOME;
-  if (!home) return [];
-  const root = import_node_path3.default.join(home, ".local", "share", "pi-node");
-  try {
-    return import_node_fs3.default
-      .readdirSync(root, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => import_node_path3.default.join(root, d.name, "bin"));
-  } catch {
-    return [];
-  }
-}
-function getExistingPathEntries() {
-  return (process.env.PATH ?? "").split(import_node_path3.default.delimiter).filter(Boolean);
-}
-function getExecutableDirectory(executable) {
-  return import_node_path3.default.isAbsolute(executable)
-    ? [import_node_path3.default.dirname(executable)]
-    : [];
-}
-function getNodeVersionManagerDirectories() {
-  const home = process.env.HOME;
-  if (!home) return [];
-  return [
-    ...getNvmNodeBinDirectories(import_node_path3.default.join(home, ".nvm", "versions", "node")),
-    ...getFnmNodeBinDirectories(import_node_path3.default.join(home, ".fnm", "node-versions")),
-    import_node_path3.default.join(home, ".asdf", "shims"),
-    import_node_path3.default.join(home, ".volta", "bin")
-  ];
-}
-function getNvmNodeBinDirectories(root) {
-  return getChildDirectories(root).map((directory) =>
-    import_node_path3.default.join(directory, "bin")
-  );
-}
-function getFnmNodeBinDirectories(root) {
-  return getChildDirectories(root).map((directory) =>
-    import_node_path3.default.join(directory, "installation", "bin")
-  );
-}
-function getChildDirectories(root) {
-  try {
-    return import_node_fs3.default
-      .readdirSync(root, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => import_node_path3.default.join(root, entry.name));
-  } catch {
-    return [];
-  }
-}
-function uniqueExistingDirectories(directories) {
-  const seen = /* @__PURE__ */ new Set();
-  return directories.filter((directory) => {
-    if (!directory || seen.has(directory) || !import_node_fs3.default.existsSync(directory))
-      return false;
-    seen.add(directory);
-    return true;
-  });
-}
-
-// src/pi/health.mjs
+var import_node_child_process2 = require("node:child_process");
 function warmupPiCli(piExecutablePath = "", cwd) {
   try {
     const piExecutable = findPiExecutable(piExecutablePath);
@@ -1597,7 +1810,7 @@ function warmupPiCli(piExecutablePath = "", cwd) {
       stdio: "ignore",
       windowsHide: true
     });
-    const child = (0, import_node_child_process.spawn)(
+    const child = (0, import_node_child_process2.spawn)(
       invocation.command,
       invocation.args,
       invocation.options
@@ -1612,7 +1825,7 @@ function checkPiInstallation(piExecutablePath = "") {
     encoding: "utf8",
     timeout: 5e3
   });
-  const result = (0, import_node_child_process.spawnSync)(
+  const result = (0, import_node_child_process2.spawnSync)(
     invocation.command,
     invocation.args,
     invocation.options
@@ -1642,131 +1855,6 @@ function checkPiInstallation(piExecutablePath = "") {
     version: (result.stdout || result.stderr || "Pi CLI found.").trim(),
     message: (result.stdout || result.stderr || "Pi CLI found.").trim()
   };
-}
-
-// src/pi/model-catalog.mjs
-var import_node_child_process2 = require("node:child_process");
-var import_node_fs4 = __toESM(require("node:fs"), 1);
-var import_node_path4 = __toESM(require("node:path"), 1);
-var REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
-var ESCAPE_CHARACTER = String.fromCharCode(27);
-var ANSI_ESCAPE_PATTERN = new RegExp(`${ESCAPE_CHARACTER}\\[[0-9;?]*[ -/]*[@-~]`, "g");
-var PiModelCatalog = class {
-  constructor(pluginDirectory, settings = {}) {
-    this.pluginDirectory = pluginDirectory;
-    this.settings = settings;
-  }
-  async getAvailableModels() {
-    const piExecutable = findPiExecutable(this.settings.piExecutablePath);
-    const output = await this.execPi(piExecutable, ["--list-models"]);
-    return parseModelCatalog(output);
-  }
-  getEffectiveConfig(vaultBasePath) {
-    return getEffectiveConfig(vaultBasePath);
-  }
-  execPi(command, args) {
-    return new Promise((resolve, reject) => {
-      const invocation = buildPiProcessInvocation(command, args, { timeout: 2e4 });
-      (0, import_node_child_process2.execFile)(
-        invocation.command,
-        invocation.args,
-        invocation.options,
-        (error, stdout, stderr) => {
-          if (error) {
-            reject(
-              new Error(
-                formatPiCliFailure({
-                  context: "Could not query Pi model registry",
-                  error,
-                  stderr,
-                  stdout
-                })
-              )
-            );
-            return;
-          }
-          resolve(stdout || stderr);
-        }
-      );
-    });
-  }
-};
-function parseModelCatalog(output) {
-  return output
-    .replace(ANSI_ESCAPE_PATTERN, "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .filter((line) => !line.startsWith("provider"))
-    .map((line) => line.split(/\s{2,}/))
-    .filter((parts) => parts.length >= 5)
-    .map((parts) => {
-      const provider = parts[0];
-      const model = parts[1];
-      const supportedReasoningLevels = normalizeReasoningLevels(parts[4]);
-      return {
-        slug: `${provider}/${model}`,
-        displayName: `${provider}: ${model}`,
-        contextWindow: parseTokenAmount(parts[2]),
-        maxOutputTokens: parseTokenAmount(parts[3]),
-        defaultReasoningLevel: supportedReasoningLevels.includes("medium")
-          ? "medium"
-          : supportedReasoningLevels[0] || "off",
-        supportedReasoningLevels
-      };
-    });
-}
-function parseTokenAmount(value) {
-  const normalized = String(value || "")
-    .trim()
-    .toUpperCase();
-  const match = normalized.match(/^(\d+(?:\.\d+)?)([KMB])?$/);
-  if (!match) return 0;
-  const amount = Number.parseFloat(match[1]);
-  const multiplier = match[2] === "B" ? 1e9 : match[2] === "M" ? 1e6 : match[2] === "K" ? 1e3 : 1;
-  return Math.round(amount * multiplier);
-}
-function normalizeReasoningLevels(value) {
-  const normalized = String(value || "")
-    .trim()
-    .toLowerCase();
-  return !normalized || normalized === "no" || normalized === "false"
-    ? ["off"]
-    : normalized === "yes" || normalized === "true"
-      ? [...REASONING_LEVELS]
-      : normalized
-          .split(/[/,|]+/)
-          .map((level) => level.trim())
-          .filter(Boolean)
-          .filter((level) => REASONING_LEVELS.includes(level));
-}
-function getEffectiveConfig(vaultBasePath) {
-  const vaultSettingsPath = vaultBasePath
-    ? import_node_path4.default.join(vaultBasePath, ".pi", "settings.json")
-    : "";
-  const settings = readJsonFile2(vaultSettingsPath);
-  const defaultModel = settings.defaultModel ? String(settings.defaultModel) : "";
-  const defaultProvider = settings.defaultProvider ? String(settings.defaultProvider) : "";
-  const effectiveModel = defaultModel
-    ? defaultModel.includes("/")
-      ? defaultModel
-      : defaultProvider
-        ? `${defaultProvider}/${defaultModel}`
-        : defaultModel
-    : "";
-  const effectiveReasoning = settings.defaultThinkingLevel
-    ? String(settings.defaultThinkingLevel)
-    : "";
-  return { effectiveModel, effectiveReasoning };
-}
-function readJsonFile2(filePath) {
-  try {
-    return filePath && import_node_fs4.default.existsSync(filePath)
-      ? JSON.parse(import_node_fs4.default.readFileSync(filePath, "utf8"))
-      : {};
-  } catch {
-    return {};
-  }
 }
 
 // src/pi/runner.mjs
@@ -1800,22 +1888,6 @@ function createContextUsage(usage, contextWindow) {
     tokens,
     contextWindow: windowSize,
     percent: windowSize > 0 ? (tokens / windowSize) * 100 : void 0
-  };
-}
-function formatContextUsageBadge(contextUsage, tokenUsage) {
-  if (!contextUsage) return void 0;
-  const usageText = `${formatTokenCount(contextUsage.tokens)}/${contextUsage.contextWindow > 0 ? formatTokenCount(contextUsage.contextWindow) : "?"}`;
-  const base =
-    contextUsage.contextWindow > 0
-      ? `ctx ${formatPercent(contextUsage.percent)} \xB7 ${usageText}`
-      : `ctx ${usageText}`;
-  return {
-    label: tokenUsage
-      ? `${base} \xB7 \u2191${formatTokenCount(calculateContextTokens(tokenUsage))} \u2193${formatTokenCount(
-          tokenUsage.output || 0
-        )}`
-      : base,
-    title: formatContextUsageTitle(contextUsage, tokenUsage)
   };
 }
 function formatContextUsageTitle(contextUsage, tokenUsage) {
@@ -3261,6 +3333,7 @@ __export(thread_list_view_exports, {
   formatThreadDate: () => formatThreadDate,
   formatThreadMeta: () => formatThreadMeta,
   renderThreadList: () => renderThreadList,
+  renderThreadListPanelHeader: () => renderThreadListPanelHeader,
   renderThreadListRow: () => renderThreadListRow,
   showThreadList: () => showThreadList,
   showThreadRowMenu: () => showThreadRowMenu,
@@ -3290,23 +3363,21 @@ function renderThreadList() {
     (this.modePillEl = void 0),
     e.empty(),
     e.addClass("pi-agent-view"));
+  this.renderThreadListPanelHeader(e);
   let s = e.createDiv({ cls: "pi-agent-thread-list-header" }),
-    o = s.createEl("button", {
-      cls: "clickable-icon pi-agent-header-action",
-      attr: { "aria-label": "Back to chat", title: "Back to chat" }
-    });
-  ((0, f2.setIcon)(o, "arrow-left"), o.addEventListener("click", () => this.renderChatView()));
-  let l = s.createDiv({ cls: "pi-agent-thread-list-heading" });
+    o = t.filter((m) => m.favorite).length,
+    l = s.createDiv({ cls: "pi-agent-thread-list-heading" });
   (l.createDiv({ cls: "pi-agent-thread-list-title-heading", text: "Threads" }),
     l.createDiv({
       cls: "pi-agent-thread-list-subtitle",
-      text: `${t.length} chat${t.length === 1 ? "" : "s"}`
+      text: `${t.length} conversation${t.length === 1 ? "" : "s"} \xB7 ${o} starred`
     }));
   let d = s.createEl("button", {
-    cls: "clickable-icon pi-agent-header-action",
+    cls: "clickable-icon pi-agent-thread-list-new-button",
     attr: { "aria-label": "New chat", title: "New chat" }
   });
   ((0, f2.setIcon)(d, "plus"),
+    d.createSpan({ text: "New" }),
     d.addEventListener("click", () => {
       (this.plugin.startNewThread(), this.renderChatView());
     }));
@@ -3315,53 +3386,76 @@ function renderThreadList() {
     ? h.createDiv({ cls: "pi-agent-empty", text: "No chat threads." })
     : t.forEach((m) => this.renderThreadListRow(h, m, m.id === n.id));
 }
+function renderThreadListPanelHeader(e) {
+  let t = e.createDiv({ cls: "pi-agent-header" }),
+    n = t.createDiv({ cls: "pi-agent-brand" }),
+    s = n.createSpan({
+      cls: "pi-agent-brand-icon",
+      attr: { title: "Pi Agent" }
+    });
+  (this.renderPiIcon(s),
+    n.createSpan({ cls: "pi-agent-thread-title pi-agent-thread-title-static", text: "Pi Agent" }),
+    (this.modePillEl = n.createSpan({ cls: "pi-agent-mode-pill" })),
+    this.renderToolModePill());
+  let a = t.createDiv({ cls: "pi-agent-header-actions" }),
+    o = a.createEl("button", {
+      cls: "clickable-icon pi-agent-header-action",
+      attr: { "aria-label": "New chat", title: "New chat" }
+    });
+  ((0, f2.setIcon)(o, "plus"),
+    o.addEventListener("click", (d) => {
+      (d.preventDefault(), this.plugin.startNewThread(), this.renderChatView());
+    }));
+  let l = a.createEl("button", {
+    cls: "clickable-icon pi-agent-thread-menu is-active",
+    attr: { "aria-label": "Back to chat", title: "Back to chat" }
+  });
+  ((0, f2.setIcon)(l, "list"),
+    l.addEventListener("click", (d) => {
+      (d.preventDefault(), this.renderChatView());
+    }));
+  let u = a.createEl("button", {
+    cls: "clickable-icon pi-agent-header-action",
+    attr: { "aria-label": "Open Pi Agent settings", title: "Open Pi Agent settings" }
+  });
+  ((0, f2.setIcon)(u, "settings"),
+    u.addEventListener("click", (d) => {
+      (d.preventDefault(), this.openPluginSettings());
+    }));
+}
 function renderThreadListRow(e, t, n) {
   let s = e.createDiv({
       cls: `pi-agent-thread-list-row${n ? " is-current" : ""}`
     }),
-    a = s.createDiv({ cls: "pi-agent-thread-list-info" }),
-    o = a.createDiv({
+    a = s.createSpan({
+      cls: `pi-agent-thread-list-row-icon${this.isThreadRunning(t.id) ? " is-running" : ""}`
+    }),
+    o = s.createDiv({ cls: "pi-agent-thread-list-info" }),
+    l = o.createDiv({
       cls: "pi-agent-thread-list-title",
       attr: { title: "Open chat" }
     });
-  if (this.isThreadRunning(t.id)) {
-    let h2 = o.createSpan({
-      cls: "pi-agent-thread-list-running",
-      attr: { title: "Agent is running in this chat" }
-    });
-    (0, f2.setIcon)(h2, "loader");
-  }
+  (0, f2.setIcon)(a, this.isThreadRunning(t.id) ? "loader" : "message-circle");
   if (t.favorite) {
-    let h2 = o.createSpan({
+    let h2 = l.createSpan({
       cls: "pi-agent-thread-list-favorite-indicator",
       attr: { title: "Favorite chat" }
     });
     (0, f2.setIcon)(h2, "star");
   }
-  o.createSpan({ text: t.title });
+  l.createSpan({ text: t.title });
   (s.addEventListener("click", () => {
     (this.plugin.switchThread(t.id), this.renderChatView());
   }),
-    a.createDiv({ cls: "pi-agent-thread-list-meta", text: this.formatThreadMeta(t, n) }));
-  let l = s.createDiv({ cls: "pi-agent-thread-list-actions" }),
-    d = l.createEl("button", {
-      cls: `clickable-icon pi-agent-thread-list-action pi-agent-thread-favorite${t.favorite ? " is-favorite" : ""}`,
-      attr: {
-        "aria-label": t.favorite ? "Remove favorite" : "Mark as favorite",
-        title: t.favorite ? "Remove favorite" : "Mark as favorite"
-      }
-    }),
-    h = l.createEl("button", {
+    o.createDiv({ cls: "pi-agent-thread-list-meta", text: this.formatThreadMeta(t, n) }));
+  let d = s.createDiv({ cls: "pi-agent-thread-list-actions" }),
+    h = d.createEl("button", {
       cls: "clickable-icon pi-agent-thread-list-action",
       attr: { "aria-label": "Thread actions", title: "Thread actions" }
     });
-  ((0, f2.setIcon)(d, t.favorite ? "star" : "star"),
-    d.addEventListener("click", (u) => {
-      (u.preventDefault(), u.stopPropagation(), this.toggleThreadFavorite(t));
-    }),
-    (0, f2.setIcon)(h, "more-horizontal"),
+  ((0, f2.setIcon)(h, "more-vertical"),
     h.addEventListener("click", (u) => {
-      (u.preventDefault(), u.stopPropagation(), this.showThreadRowMenu(u, t, n, o));
+      (u.preventDefault(), u.stopPropagation(), this.showThreadRowMenu(u, t, n, l));
     }));
 }
 function showThreadRowMenu(e, t, n, s) {
@@ -4150,6 +4244,7 @@ var RunSettingsControls = class {
   constructor(plugin, callbacks = {}) {
     this.plugin = plugin;
     this.callbacks = callbacks;
+    this.modelPickerQuery = "";
   }
   render(containerEl) {
     this.row = containerEl.createDiv({ cls: "pi-agent-run-settings" });
@@ -4157,6 +4252,7 @@ var RunSettingsControls = class {
   }
   refresh() {
     if (!this.row) return;
+    this.closeModelPicker();
     this.row.empty();
     this.populate(this.row);
   }
@@ -4245,21 +4341,11 @@ var RunSettingsControls = class {
         this.refresh();
       }
       const currentOptions = getModelOptions(this.plugin.settings);
-      const { selectedValue: currentSelectedValue } = this.getRunSettingLabels(
-        name,
-        currentOptions,
-        this.plugin.settings.model
-      );
-      const modal = new ModelPickerModal(
-        this.plugin.app,
-        this.getModelPickerItems(currentOptions),
-        currentSelectedValue,
-        async (optionValue) => {
-          await onChange(optionValue);
-          this.refresh();
-        }
-      );
-      modal.open();
+      this.toggleModelPicker(buttonEl, currentOptions, async (optionValue) => {
+        await onChange(optionValue);
+        this.closeModelPicker();
+        this.refresh();
+      });
     });
   }
   addRunSetting(containerEl, name, icon, options, value, onChange) {
@@ -4300,7 +4386,11 @@ var RunSettingsControls = class {
     return { selectedValue, selectedLabel: titleLabel, displayLabel };
   }
   createRunSettingButton(containerEl, name, icon, selectedValue, selectedLabel, displayLabel) {
-    const buttonEl = containerEl.createEl("button", {
+    const parentEl =
+      name === "Model"
+        ? containerEl.createSpan({ cls: "pi-agent-model-picker-anchor" })
+        : containerEl;
+    const buttonEl = parentEl.createEl("button", {
       cls: `clickable-icon pi-agent-run-setting ${this.getRunSettingClass(name, selectedValue)}`,
       attr: { "aria-label": `${name}: ${selectedLabel}`, title: `${name}: ${selectedLabel}` }
     });
@@ -4309,14 +4399,148 @@ var RunSettingsControls = class {
     return buttonEl;
   }
   getModelPickerItems(options) {
+    const modelsBySlug = new Map(
+      (this.plugin.settings.availableModels ?? []).map((model) => [model.slug, model])
+    );
     return Object.entries(options).map(([value, label]) => {
       const pickerLabel = value ? label : this.getDefaultModelPickerLabel(label);
+      const model = modelsBySlug.get(value);
       return {
         value,
         label: pickerLabel,
+        name: this.formatModelPickerName(value, pickerLabel, model),
+        provider: this.formatModelPickerProvider(value, pickerLabel, model),
         searchText: `${value} ${pickerLabel}`.trim()
       };
     });
+  }
+  toggleModelPicker(buttonEl, options, onChoose) {
+    if (this.modelPickerEl) {
+      this.closeModelPicker();
+      return;
+    }
+    this.modelPickerButtonEl = buttonEl;
+    this.modelPickerOptions = options;
+    this.modelPickerOnChoose = onChoose;
+    this.modelPickerQuery = "";
+    this.renderModelPicker();
+    const closeOnOutsidePointer = (event) => {
+      if (this.modelPickerEl?.contains(event.target) || buttonEl.contains(event.target)) return;
+      this.closeModelPicker();
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") this.closeModelPicker();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape, true);
+    this.modelPickerCleanup = () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }
+  closeModelPicker() {
+    this.modelPickerCleanup?.();
+    this.modelPickerCleanup = void 0;
+    this.modelPickerEl?.remove();
+    this.modelPickerEl = void 0;
+    this.modelPickerButtonEl = void 0;
+    this.modelPickerOptions = void 0;
+    this.modelPickerOnChoose = void 0;
+  }
+  renderModelPicker() {
+    const anchorEl = this.modelPickerButtonEl?.closest(".pi-agent-model-picker-anchor");
+    if (!anchorEl || !this.modelPickerOptions) return;
+    this.modelPickerEl?.remove();
+    const pickerEl = anchorEl.createDiv({ cls: "pi-agent-model-picker-popover" });
+    this.modelPickerEl = pickerEl;
+    const searchEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-search" });
+    (0, import_obsidian8.setIcon)(searchEl.createSpan(), "search");
+    const inputEl = searchEl.createEl("input", {
+      attr: { type: "text", placeholder: "Search 300+ models..." }
+    });
+    inputEl.value = this.modelPickerQuery;
+    inputEl.addEventListener("input", () => {
+      this.modelPickerQuery = inputEl.value;
+      this.populateModelPickerResults();
+    });
+    this.modelPickerResultsEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-results" });
+    this.populateModelPickerResults();
+    window.setTimeout(() => inputEl.focus(), 0);
+  }
+  populateModelPickerResults() {
+    if (!this.modelPickerResultsEl || !this.modelPickerOptions) return;
+    this.modelPickerResultsEl.empty();
+    const query = this.modelPickerQuery.trim().toLowerCase();
+    const items = this.getModelPickerItems(this.modelPickerOptions).filter((item) =>
+      query ? item.searchText.toLowerCase().includes(query) : true
+    );
+    const favorites = items.filter((item) => this.isFavoriteModel(item.value));
+    const allModels = items.filter((item) => !this.isFavoriteModel(item.value));
+    if (favorites.length > 0) {
+      this.renderModelPickerSection("Favorites", favorites, true);
+      this.modelPickerResultsEl.createDiv({ cls: "pi-agent-model-picker-separator" });
+    }
+    this.renderModelPickerSection("All models", allModels, false);
+    if (items.length === 0) {
+      this.modelPickerResultsEl.createDiv({
+        cls: "pi-agent-model-picker-empty",
+        text: `No models match "${this.modelPickerQuery}".`
+      });
+    }
+  }
+  renderModelPickerSection(title, items, favoriteSection) {
+    if (!this.modelPickerResultsEl || items.length === 0) return;
+    const headingEl = this.modelPickerResultsEl.createDiv({ cls: "pi-agent-model-picker-heading" });
+    if (favoriteSection) (0, import_obsidian8.setIcon)(headingEl.createSpan(), "star");
+    headingEl.createSpan({ text: title });
+    for (const item of items) this.renderModelPickerRow(item);
+  }
+  renderModelPickerRow(item) {
+    if (!this.modelPickerResultsEl) return;
+    const selected = item.value === this.plugin.settings.model;
+    const favorite = this.isFavoriteModel(item.value);
+    const rowEl = this.modelPickerResultsEl.createDiv({
+      cls: `pi-agent-model-picker-row${selected ? " is-selected" : ""}`
+    });
+    (0, import_obsidian8.setIcon)(
+      rowEl.createSpan({ cls: "pi-agent-model-picker-row-icon" }),
+      "sparkles"
+    );
+    const textEl = rowEl.createDiv({ cls: "pi-agent-model-picker-row-text" });
+    textEl.createDiv({ cls: "pi-agent-model-picker-row-name", text: item.name });
+    textEl.createDiv({ cls: "pi-agent-model-picker-row-provider", text: item.provider });
+    if (selected)
+      (0, import_obsidian8.setIcon)(
+        rowEl.createSpan({ cls: "pi-agent-model-picker-check" }),
+        "check"
+      );
+    const canFavorite = item.value && item.value !== CUSTOM_MODEL_VALUE;
+    if (canFavorite) {
+      const favoriteEl = rowEl.createEl("button", {
+        cls: `clickable-icon pi-agent-model-picker-favorite${favorite ? " is-favorite" : ""}`,
+        attr: { type: "button", title: favorite ? "Unfavorite model" : "Favorite model" }
+      });
+      (0, import_obsidian8.setIcon)(favoriteEl, "star");
+      favoriteEl.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.toggleFavoriteModel(item.value);
+        this.populateModelPickerResults();
+      });
+    }
+    rowEl.addEventListener("click", () => this.modelPickerOnChoose?.(item.value));
+  }
+  isFavoriteModel(value) {
+    return this.plugin.isScopedModel?.(value) ?? false;
+  }
+  async toggleFavoriteModel(value) {
+    try {
+      await this.plugin.toggleScopedModel(value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new import_obsidian8.Notice(message);
+      console.warn("Pi Agent: failed to update scoped models", error);
+    }
   }
   getDefaultModelPickerLabel(label) {
     return this.plugin.settings.effectiveModel
@@ -4328,7 +4552,11 @@ var RunSettingsControls = class {
       ? value === CUSTOM_MODEL_VALUE
         ? this.plugin.settings.customModel.trim() || this.formatDefaultModelLabel()
         : value
-          ? value
+          ? this.formatModelPickerName(
+              value,
+              label,
+              this.plugin.settings.availableModels.find((model) => model.slug === value)
+            )
           : this.formatDefaultModelLabel()
       : name === "Think"
         ? value
@@ -4348,7 +4576,20 @@ var RunSettingsControls = class {
   }
   formatDefaultModelLabel() {
     const model = this.plugin.settings.effectiveModel;
-    return model || "Pi default";
+    return model ? this.formatModelPickerName(model, model) : "Pi default";
+  }
+  formatModelPickerName(value, label, model) {
+    if (!value) return "Pi default";
+    if (value === CUSTOM_MODEL_VALUE) return this.plugin.settings.customModel.trim() || "Custom";
+    const slug = model?.slug ?? value;
+    return titleCaseModel(slug.split("/").pop() || label || value);
+  }
+  formatModelPickerProvider(value, label, model) {
+    if (!value) return this.plugin.settings.effectiveModel || "Use Pi default";
+    if (value === CUSTOM_MODEL_VALUE) return "Custom model ID";
+    const slug = model?.slug ?? value;
+    const parts = slug.split("/");
+    return titleCaseProvider(parts.length > 2 ? parts[1] : parts[0] || label);
   }
   formatDefaultReasoningLabel() {
     const reasoning = this.plugin.settings.effectiveReasoning;
@@ -4386,37 +4627,34 @@ var RunSettingsControls = class {
         : "";
   }
 };
-var ModelPickerModal = class extends import_obsidian8.FuzzySuggestModal {
-  constructor(app, items, selectedValue, onChoose) {
-    super(app);
-    this.items = items;
-    this.selectedValue = selectedValue;
-    this.onChoose = onChoose;
-    this.setPlaceholder("Search Pi models...");
-  }
-  getItems() {
-    return this.items;
-  }
-  getItemText(item) {
-    return item.searchText;
-  }
-  renderSuggestion(item, el) {
-    const option = item.item;
-    el.createDiv({
-      cls: "pi-agent-model-picker-label",
-      text: option.value ? option.value : "Pi default"
-    });
-    if (option.label && option.label !== option.value) {
-      el.createDiv({ cls: "pi-agent-model-picker-detail", text: option.label });
-    }
-    if (option.value === this.selectedValue) {
-      el.addClass("is-selected");
-    }
-  }
-  async onChooseItem(item) {
-    await this.onChoose(item.value);
-  }
-};
+function titleCaseModel(value) {
+  return String(value || "")
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      return lower === "gpt"
+        ? "GPT"
+        : lower === "ai"
+          ? "AI"
+          : lower === "api"
+            ? "API"
+            : /^\d+(?:\.\d+)?$/.test(part)
+              ? part
+              : `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    })
+    .join(" ");
+}
+function titleCaseProvider(value) {
+  const lower = String(value || "").toLowerCase();
+  return lower === "openai"
+    ? "OpenAI"
+    : lower === "anthropic"
+      ? "Anthropic"
+      : lower === "google"
+        ? "Google"
+        : titleCaseModel(value);
+}
 
 // src/ui/suggestions.mjs
 var ComposerSuggestions = class {
@@ -4995,24 +5233,57 @@ var PiAgentView = class extends f5.ItemView {
   }
   renderToolBadgesContextUsage(e) {
     let t = this.getDisplayedContextUsage(),
-      n = t?.compacted
-        ? {
-            label: `ctx compacted \xB7 ?/${formatTokenCount(t.contextWindow || 0)}`,
-            title:
-              "Pi compacted this session. Exact context usage is unknown until the next model response returns fresh token usage."
-          }
-        : t
-          ? formatContextUsageBadge(t.contextUsage, t.tokenUsage)
-          : void 0;
-    e.createSpan({
-      cls: `pi-agent-tool-badge pi-agent-tool-badge-context${n ? " is-enabled" : ""}`,
-      text: n ? n.label : "ctx --",
-      attr: {
-        title: n
-          ? n.title
-          : "Context usage appears after Pi returns token usage for the selected model."
-      }
-    });
+      n = this.getContextUsageMeter(t),
+      s = e.createSpan({
+        cls: `pi-agent-context-meter${n ? " is-enabled" : ""}${t?.compacted ? " is-compacted" : ""}`,
+        attr: {
+          title: n
+            ? n.title
+            : "Context usage appears after Pi returns token usage for the selected model."
+        }
+      }),
+      a = s.createSpan({ cls: "pi-agent-context-meter-track", attr: { "aria-hidden": "true" } });
+    (a.createSpan({
+      cls: "pi-agent-context-meter-fill",
+      attr: { style: `width: ${n ? n.width : 0}%` }
+    }),
+      s.createSpan({ cls: "pi-agent-context-meter-label", text: n ? n.label : "-- / -- \xB7 --" }));
+  }
+  getContextUsageMeter(e) {
+    if (!e) return void 0;
+    if (e.compacted) {
+      let t2 = e.contextWindow || 0;
+      return {
+        label: `compacted / ${t2 > 0 ? formatTokenCount(t2) : "?"} \xB7 ?`,
+        title:
+          "Pi compacted this session. Exact context usage is unknown until the next model response returns fresh token usage.",
+        width: 0
+      };
+    }
+    if (!e.contextUsage) return void 0;
+    let t = e.contextUsage,
+      n = t.contextWindow > 0,
+      s = n && t.tokens > 0 ? Math.max(3, Math.min(100, t.percent || 0)) : 0,
+      a = n
+        ? `${this.formatContextMeterTokenCount(t.tokens)} / ${this.formatContextMeterTokenCount(
+            t.contextWindow
+          )} \xB7 ${formatPercent(t.percent)}`
+        : `${this.formatContextMeterTokenCount(t.tokens)} / ? \xB7 ?`,
+      o = e.tokenUsage,
+      l = o
+        ? `${formatContextUsageTitle(t, o)}
+
+Input: ${formatTokenCount(calculateContextTokens(o))} tokens
+Output: ${formatTokenCount(o.output || 0)} tokens`
+        : formatContextUsageTitle(t, o);
+    return {
+      label: a,
+      title: l,
+      width: s
+    };
+  }
+  formatContextMeterTokenCount(e) {
+    return formatTokenCount(e).toLowerCase();
   }
   getDisplayedContextUsage() {
     var n;
@@ -5831,6 +6102,8 @@ var PiAgentPlugin = class extends P.Plugin {
     this.threadHistory = new ThreadStore();
     this.dataSaveChain = Promise.resolve();
     this.cachedEditorSelection = void 0;
+    this.selectionToolbarEl = void 0;
+    this.selectionToolbarContext = void 0;
   }
   async onload() {
     await this.loadSettings();
@@ -5847,8 +6120,15 @@ var PiAgentPlugin = class extends P.Plugin {
     this.refreshCurrentContextFile();
     this.cacheCurrentEditorSelection({ allowClear: false });
     this.registerDomEvent(document, "selectionchange", () => {
-      this.cacheCurrentEditorSelection({ allowClear: false });
+      window.setTimeout(() => {
+        this.cacheCurrentEditorSelection({ allowClear: false });
+        this.updateSelectionToolbar();
+      }, 0);
     });
+    this.registerDomEvent(document, "mouseup", () => {
+      window.setTimeout(() => this.updateSelectionToolbar(), 0);
+    });
+    this.registerDomEvent(window, "resize", () => this.hideSelectionToolbar());
     this.registerEvent(
       this.app.workspace.on("file-open", (e) => {
         this.setCurrentContextFile(e);
@@ -5926,6 +6206,7 @@ var PiAgentPlugin = class extends P.Plugin {
   }
   onunload() {
     this.cancelPiRun();
+    this.hideSelectionToolbar();
   }
   async loadSettings() {
     let e = await this.loadData(),
@@ -5938,6 +6219,7 @@ var PiAgentPlugin = class extends P.Plugin {
     let l = getEffectiveConfig(this.getVaultBasePath());
     ((this.settings.effectiveModel = l.effectiveModel || ""),
       (this.settings.effectiveReasoning = l.effectiveReasoning || ""),
+      (this.settings.scopedModels = l.scopedModels || []),
       this.syncCurrentThreadState(),
       this.settings.model &&
         isLegacyBareModelId(this.settings.model) &&
@@ -5975,6 +6257,7 @@ var PiAgentPlugin = class extends P.Plugin {
       ((this.settings.availableModels = n),
         (this.settings.effectiveModel = s.effectiveModel || ""),
         (this.settings.effectiveReasoning = s.effectiveReasoning || ""),
+        (this.settings.scopedModels = s.scopedModels || []),
         await this.saveSettings(),
         e &&
           new P.Notice(
@@ -6144,6 +6427,29 @@ var PiAgentPlugin = class extends P.Plugin {
   async ensureModelCatalogLoaded() {
     this.settings.availableModels.length === 0 && (await this.refreshModelCatalog(false));
   }
+  isScopedModel(e) {
+    return !!e && (this.settings.scopedModels || []).some((t) => getEnabledModelPatternId(t) === e);
+  }
+  async setScopedModels(e) {
+    let t = writePiEnabledModels(e);
+    this.settings.scopedModels = t;
+    let n = getEffectiveConfig(this.getVaultBasePath());
+    return (
+      (this.settings.effectiveModel = n.effectiveModel || ""),
+      (this.settings.effectiveReasoning = n.effectiveReasoning || ""),
+      (this.settings.scopedModels = n.scopedModels || t),
+      await this.saveSettings(),
+      this.settings.scopedModels
+    );
+  }
+  async toggleScopedModel(e) {
+    let t = this.settings.scopedModels || [],
+      n = getEnabledModelPatternId(e),
+      s = t.some((a) => getEnabledModelPatternId(a) === n)
+        ? t.filter((a) => getEnabledModelPatternId(a) !== n)
+        : [...t, e];
+    return this.setScopedModels(s);
+  }
   getModelInfoForTokenUsage(e) {
     if (!e) return;
     let t = e.modelId || (e.provider && e.model ? `${e.provider}/${e.model}` : "");
@@ -6213,6 +6519,7 @@ var PiAgentPlugin = class extends P.Plugin {
     let e = {
       ...this.settings,
       availableModels: [],
+      scopedModels: [],
       chatHistory: sanitizeThreadHistory(this.threadHistory.toJSON())
     };
     return (
@@ -6330,6 +6637,69 @@ var PiAgentPlugin = class extends P.Plugin {
   }
   clearCachedEditorSelection() {
     this.cachedEditorSelection = void 0;
+  }
+  updateSelectionToolbar() {
+    let e = this.getSelectionToolbarContext();
+    if (!e) {
+      this.hideSelectionToolbar();
+      return;
+    }
+    this.selectionToolbarContext = e;
+    let t = this.ensureSelectionToolbar();
+    ((t.style.left = `${e.left}px`), (t.style.top = `${e.top}px`));
+  }
+  getSelectionToolbarContext() {
+    var h;
+    if (this.isFocusInsidePiAgentView()) return;
+    let e = this.app.workspace.activeEditor,
+      t = (h = e == null ? void 0 : e.file) != null ? h : this.app.workspace.getActiveFile();
+    if (!t || t.extension !== "md") return;
+    let n = document.getSelection(),
+      s = n?.anchorNode;
+    if (!n || n.isCollapsed || this.isNodeInsidePiAgentView(s)) return;
+    let a = n.toString().trim();
+    if (!a || n.rangeCount === 0) return;
+    let o = n.getRangeAt(0),
+      l = o.getBoundingClientRect();
+    if (l.width === 0 && l.height === 0) l = o.getClientRects()[0];
+    if (!l || (l.width === 0 && l.height === 0)) return;
+    let d = 118,
+      u = Math.max(8, Math.min(window.innerWidth - d - 8, l.left + l.width / 2 - d / 2)),
+      g = l.top - 40;
+    if (g < 8) g = l.bottom + 8;
+    return { path: t.path, text: a, left: u, top: g };
+  }
+  ensureSelectionToolbar() {
+    if (this.selectionToolbarEl) return this.selectionToolbarEl;
+    let e = document.body.createEl("button", {
+      cls: "pi-agent-selection-toolbar",
+      attr: { type: "button", title: "Send to Pi" }
+    });
+    return (
+      P.setIcon(e.createSpan({ cls: "pi-agent-selection-toolbar-icon" }), "diamond"),
+      e.createSpan({ text: "Send to Pi" }),
+      e.addEventListener("mousedown", (t) => {
+        (t.preventDefault(), t.stopPropagation());
+      }),
+      e.addEventListener("click", (t) => {
+        (t.preventDefault(), t.stopPropagation(), this.sendSelectionToolbarContextToPi());
+      }),
+      (this.selectionToolbarEl = e),
+      e
+    );
+  }
+  async sendSelectionToolbarContextToPi() {
+    let e = this.selectionToolbarContext;
+    if (!e?.text?.trim()) return;
+    this.cachedEditorSelection = { path: e.path, text: e.text, updatedAt: Date.now() };
+    this.hideSelectionToolbar();
+    let t = await this.activateView({ focusInput: true });
+    t instanceof PiAgentView && t.renderSelectionState();
+  }
+  hideSelectionToolbar() {
+    (this.selectionToolbarEl?.remove(),
+      (this.selectionToolbarEl = void 0),
+      (this.selectionToolbarContext = void 0));
   }
   isFocusInsidePiAgentView() {
     return this.isNodeInsidePiAgentView(document.activeElement);

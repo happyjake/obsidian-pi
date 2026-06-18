@@ -1,10 +1,12 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { formatPiCliFailure } from "./diagnostics.mjs";
 import { buildPiProcessInvocation, findPiExecutable } from "./environment.mjs";
 
 const REASONING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"];
+const ENABLED_MODELS_KEY = "enabledModels";
 const ESCAPE_CHARACTER = String.fromCharCode(27);
 const ANSI_ESCAPE_PATTERN = new RegExp(`${ESCAPE_CHARACTER}\\[[0-9;?]*[ -/]*[@-~]`, "g");
 
@@ -106,8 +108,10 @@ export function normalizeReasoningLevels(value) {
 }
 
 export function getEffectiveConfig(vaultBasePath) {
+  const globalSettings = readJsonFile(getPiAgentSettingsPath());
   const vaultSettingsPath = vaultBasePath ? path.join(vaultBasePath, ".pi", "settings.json") : "";
-  const settings = readJsonFile(vaultSettingsPath);
+  const vaultSettings = readJsonFile(vaultSettingsPath);
+  const settings = { ...globalSettings, ...vaultSettings };
   const defaultModel = settings.defaultModel ? String(settings.defaultModel) : "";
   const defaultProvider = settings.defaultProvider ? String(settings.defaultProvider) : "";
   const effectiveModel = defaultModel
@@ -120,8 +124,62 @@ export function getEffectiveConfig(vaultBasePath) {
   const effectiveReasoning = settings.defaultThinkingLevel
     ? String(settings.defaultThinkingLevel)
     : "";
+  const scopedModels = normalizeEnabledModels(
+    getScopedModelSetting(vaultSettings) ?? getScopedModelSetting(globalSettings)
+  );
 
-  return { effectiveModel, effectiveReasoning };
+  return { effectiveModel, effectiveReasoning, scopedModels };
+}
+
+export function getPiAgentSettingsPath() {
+  return path.join(
+    process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent"),
+    "settings.json"
+  );
+}
+
+export function writePiEnabledModels(modelPatterns, settingsPath = getPiAgentSettingsPath()) {
+  const settings = readJsonFileForWrite(settingsPath);
+  const enabledModels = normalizeEnabledModels(modelPatterns);
+
+  if (enabledModels.length > 0) settings[ENABLED_MODELS_KEY] = enabledModels;
+  else delete settings[ENABLED_MODELS_KEY];
+
+  delete settings.scopedModels;
+  delete settings.scoped_models;
+  delete settings["scoped-models"];
+
+  fs.mkdirSync(path.dirname(settingsPath), { recursive: true });
+  fs.writeFileSync(settingsPath, `${JSON.stringify(settings, null, 2)}\n`, { mode: 0o600 });
+  return enabledModels;
+}
+
+export function normalizeEnabledModels(value) {
+  const values = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,\n]/)
+      : value == null
+        ? []
+        : [value];
+  const seen = new Set();
+  const normalized = [];
+
+  for (const item of values) {
+    const model = normalizeEnabledModel(item);
+    if (!model || seen.has(model)) continue;
+    seen.add(model);
+    normalized.push(model);
+  }
+
+  return normalized;
+}
+
+export function getEnabledModelPatternId(value) {
+  const model = String(value || "").trim();
+  const parts = model.split(":");
+  const suffix = parts.length > 1 ? parts[parts.length - 1].toLowerCase() : "";
+  return REASONING_LEVELS.includes(suffix) ? parts.slice(0, -1).join(":") : model;
 }
 
 function readJsonFile(filePath) {
@@ -130,4 +188,48 @@ function readJsonFile(filePath) {
   } catch {
     return {};
   }
+}
+
+function readJsonFileForWrite(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`Could not read Pi settings at ${filePath}: ${message}`, { cause: error });
+  }
+}
+
+function getScopedModelSetting(settings) {
+  if (Object.prototype.hasOwnProperty.call(settings, ENABLED_MODELS_KEY))
+    return settings[ENABLED_MODELS_KEY];
+  if (Object.prototype.hasOwnProperty.call(settings, "scopedModels")) return settings.scopedModels;
+  if (Object.prototype.hasOwnProperty.call(settings, "scoped_models"))
+    return settings.scoped_models;
+  if (Object.prototype.hasOwnProperty.call(settings, "scoped-models"))
+    return settings["scoped-models"];
+  return undefined;
+}
+
+function normalizeEnabledModel(value) {
+  if (typeof value === "string") return value.trim();
+
+  if (value && typeof value === "object") {
+    if (typeof value.pattern === "string") return value.pattern.trim();
+    if (typeof value.id === "string" && typeof value.provider === "string") {
+      return `${value.provider.trim()}/${value.id.trim()}`;
+    }
+    if (typeof value.model === "string") {
+      return value.provider
+        ? `${String(value.provider).trim()}/${value.model.trim()}`
+        : value.model.trim();
+    }
+    if (value.model && typeof value.model === "object") {
+      const provider = typeof value.model.provider === "string" ? value.model.provider.trim() : "";
+      const id = typeof value.model.id === "string" ? value.model.id.trim() : "";
+      return provider && id ? `${provider}/${id}` : id;
+    }
+  }
+
+  return "";
 }

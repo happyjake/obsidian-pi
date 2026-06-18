@@ -5,7 +5,12 @@ import { formatContextShowResponse, isContextShowPrompt } from "../context/conte
 import { normalizeSkillFolderList } from "../context/skills.mjs";
 import { VaultGraph } from "../context/vault-graph.mjs";
 import { checkPiInstallation, warmupPiCli } from "../pi/health.mjs";
-import { PiModelCatalog, getEffectiveConfig } from "../pi/model-catalog.mjs";
+import {
+  getEffectiveConfig,
+  getEnabledModelPatternId,
+  PiModelCatalog,
+  writePiEnabledModels
+} from "../pi/model-catalog.mjs";
 import { getCompactInstructions, PiRunner } from "../pi/runner.mjs";
 import { CUSTOM_MODEL_VALUE as b, DEFAULT_SETTINGS as H, normalizeSettings } from "./settings.mjs";
 import { PiAgentSettingTab } from "./settings-tab.mjs";
@@ -101,6 +106,8 @@ export class PiAgentPlugin extends P.Plugin {
     this.threadHistory = new ThreadStore();
     this.dataSaveChain = Promise.resolve();
     this.cachedEditorSelection = undefined;
+    this.selectionToolbarEl = undefined;
+    this.selectionToolbarContext = undefined;
   }
   async onload() {
     await this.loadSettings();
@@ -121,8 +128,15 @@ export class PiAgentPlugin extends P.Plugin {
     this.refreshCurrentContextFile();
     this.cacheCurrentEditorSelection({ allowClear: false });
     this.registerDomEvent(document, "selectionchange", () => {
-      this.cacheCurrentEditorSelection({ allowClear: false });
+      window.setTimeout(() => {
+        this.cacheCurrentEditorSelection({ allowClear: false });
+        this.updateSelectionToolbar();
+      }, 0);
     });
+    this.registerDomEvent(document, "mouseup", () => {
+      window.setTimeout(() => this.updateSelectionToolbar(), 0);
+    });
+    this.registerDomEvent(window, "resize", () => this.hideSelectionToolbar());
 
     this.registerEvent(
       this.app.workspace.on("file-open", (e) => {
@@ -201,6 +215,7 @@ export class PiAgentPlugin extends P.Plugin {
   }
   onunload() {
     this.cancelPiRun();
+    this.hideSelectionToolbar();
   }
   async loadSettings() {
     let e = await this.loadData(),
@@ -213,6 +228,7 @@ export class PiAgentPlugin extends P.Plugin {
     let l = getEffectiveConfig(this.getVaultBasePath());
     ((this.settings.effectiveModel = l.effectiveModel || ""),
       (this.settings.effectiveReasoning = l.effectiveReasoning || ""),
+      (this.settings.scopedModels = l.scopedModels || []),
       this.syncCurrentThreadState(),
       this.settings.model &&
         isLegacyBareModelId(this.settings.model) &&
@@ -252,6 +268,7 @@ export class PiAgentPlugin extends P.Plugin {
       ((this.settings.availableModels = n),
         (this.settings.effectiveModel = s.effectiveModel || ""),
         (this.settings.effectiveReasoning = s.effectiveReasoning || ""),
+        (this.settings.scopedModels = s.scopedModels || []),
         await this.saveSettings(),
         e &&
           new P.Notice(
@@ -421,6 +438,29 @@ export class PiAgentPlugin extends P.Plugin {
   async ensureModelCatalogLoaded() {
     this.settings.availableModels.length === 0 && (await this.refreshModelCatalog(!1));
   }
+  isScopedModel(e) {
+    return !!e && (this.settings.scopedModels || []).some((t) => getEnabledModelPatternId(t) === e);
+  }
+  async setScopedModels(e) {
+    let t = writePiEnabledModels(e);
+    this.settings.scopedModels = t;
+    let n = getEffectiveConfig(this.getVaultBasePath());
+    return (
+      (this.settings.effectiveModel = n.effectiveModel || ""),
+      (this.settings.effectiveReasoning = n.effectiveReasoning || ""),
+      (this.settings.scopedModels = n.scopedModels || t),
+      await this.saveSettings(),
+      this.settings.scopedModels
+    );
+  }
+  async toggleScopedModel(e) {
+    let t = this.settings.scopedModels || [],
+      n = getEnabledModelPatternId(e),
+      s = t.some((a) => getEnabledModelPatternId(a) === n)
+        ? t.filter((a) => getEnabledModelPatternId(a) !== n)
+        : [...t, e];
+    return this.setScopedModels(s);
+  }
   getModelInfoForTokenUsage(e) {
     if (!e) return;
     let t = e.modelId || (e.provider && e.model ? `${e.provider}/${e.model}` : "");
@@ -489,6 +529,7 @@ export class PiAgentPlugin extends P.Plugin {
     let e = {
       ...this.settings,
       availableModels: [],
+      scopedModels: [],
       chatHistory: sanitizeThreadHistory(this.threadHistory.toJSON())
     };
     return (
@@ -606,6 +647,69 @@ export class PiAgentPlugin extends P.Plugin {
   }
   clearCachedEditorSelection() {
     this.cachedEditorSelection = undefined;
+  }
+  updateSelectionToolbar() {
+    let e = this.getSelectionToolbarContext();
+    if (!e) {
+      this.hideSelectionToolbar();
+      return;
+    }
+    this.selectionToolbarContext = e;
+    let t = this.ensureSelectionToolbar();
+    ((t.style.left = `${e.left}px`), (t.style.top = `${e.top}px`));
+  }
+  getSelectionToolbarContext() {
+    var h;
+    if (this.isFocusInsidePiAgentView()) return;
+    let e = this.app.workspace.activeEditor,
+      t = (h = e == null ? void 0 : e.file) != null ? h : this.app.workspace.getActiveFile();
+    if (!t || t.extension !== "md") return;
+    let n = document.getSelection(),
+      s = n?.anchorNode;
+    if (!n || n.isCollapsed || this.isNodeInsidePiAgentView(s)) return;
+    let a = n.toString().trim();
+    if (!a || n.rangeCount === 0) return;
+    let o = n.getRangeAt(0),
+      l = o.getBoundingClientRect();
+    if (l.width === 0 && l.height === 0) l = o.getClientRects()[0];
+    if (!l || (l.width === 0 && l.height === 0)) return;
+    let d = 118,
+      u = Math.max(8, Math.min(window.innerWidth - d - 8, l.left + l.width / 2 - d / 2)),
+      g = l.top - 40;
+    if (g < 8) g = l.bottom + 8;
+    return { path: t.path, text: a, left: u, top: g };
+  }
+  ensureSelectionToolbar() {
+    if (this.selectionToolbarEl) return this.selectionToolbarEl;
+    let e = document.body.createEl("button", {
+      cls: "pi-agent-selection-toolbar",
+      attr: { type: "button", title: "Send to Pi" }
+    });
+    return (
+      P.setIcon(e.createSpan({ cls: "pi-agent-selection-toolbar-icon" }), "diamond"),
+      e.createSpan({ text: "Send to Pi" }),
+      e.addEventListener("mousedown", (t) => {
+        (t.preventDefault(), t.stopPropagation());
+      }),
+      e.addEventListener("click", (t) => {
+        (t.preventDefault(), t.stopPropagation(), this.sendSelectionToolbarContextToPi());
+      }),
+      (this.selectionToolbarEl = e),
+      e
+    );
+  }
+  async sendSelectionToolbarContextToPi() {
+    let e = this.selectionToolbarContext;
+    if (!e?.text?.trim()) return;
+    this.cachedEditorSelection = { path: e.path, text: e.text, updatedAt: Date.now() };
+    this.hideSelectionToolbar();
+    let t = await this.activateView({ focusInput: true });
+    t instanceof PiAgentView && t.renderSelectionState();
+  }
+  hideSelectionToolbar() {
+    (this.selectionToolbarEl?.remove(),
+      (this.selectionToolbarEl = undefined),
+      (this.selectionToolbarContext = undefined));
   }
   isFocusInsidePiAgentView() {
     return this.isNodeInsidePiAgentView(document.activeElement);

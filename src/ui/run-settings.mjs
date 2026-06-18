@@ -1,4 +1,4 @@
-import { FuzzySuggestModal, Menu, Notice, setIcon } from "obsidian";
+import { Menu, Notice, setIcon } from "obsidian";
 import {
   CUSTOM_MODEL_VALUE,
   getModelOptions,
@@ -12,6 +12,7 @@ export class RunSettingsControls {
   constructor(plugin, callbacks = {}) {
     this.plugin = plugin;
     this.callbacks = callbacks;
+    this.modelPickerQuery = "";
   }
 
   render(containerEl) {
@@ -22,6 +23,7 @@ export class RunSettingsControls {
   refresh() {
     if (!this.row) return;
 
+    this.closeModelPicker();
     this.row.empty();
     this.populate(this.row);
   }
@@ -117,21 +119,11 @@ export class RunSettingsControls {
         this.refresh();
       }
       const currentOptions = getModelOptions(this.plugin.settings);
-      const { selectedValue: currentSelectedValue } = this.getRunSettingLabels(
-        name,
-        currentOptions,
-        this.plugin.settings.model
-      );
-      const modal = new ModelPickerModal(
-        this.plugin.app,
-        this.getModelPickerItems(currentOptions),
-        currentSelectedValue,
-        async (optionValue) => {
-          await onChange(optionValue);
-          this.refresh();
-        }
-      );
-      modal.open();
+      this.toggleModelPicker(buttonEl, currentOptions, async (optionValue) => {
+        await onChange(optionValue);
+        this.closeModelPicker();
+        this.refresh();
+      });
     });
   }
 
@@ -178,7 +170,11 @@ export class RunSettingsControls {
   }
 
   createRunSettingButton(containerEl, name, icon, selectedValue, selectedLabel, displayLabel) {
-    const buttonEl = containerEl.createEl("button", {
+    const parentEl =
+      name === "Model"
+        ? containerEl.createSpan({ cls: "pi-agent-model-picker-anchor" })
+        : containerEl;
+    const buttonEl = parentEl.createEl("button", {
       cls: `clickable-icon pi-agent-run-setting ${this.getRunSettingClass(name, selectedValue)}`,
       attr: { "aria-label": `${name}: ${selectedLabel}`, title: `${name}: ${selectedLabel}` }
     });
@@ -189,14 +185,155 @@ export class RunSettingsControls {
   }
 
   getModelPickerItems(options) {
+    const modelsBySlug = new Map(
+      (this.plugin.settings.availableModels ?? []).map((model) => [model.slug, model])
+    );
     return Object.entries(options).map(([value, label]) => {
       const pickerLabel = value ? label : this.getDefaultModelPickerLabel(label);
+      const model = modelsBySlug.get(value);
       return {
         value,
         label: pickerLabel,
+        name: this.formatModelPickerName(value, pickerLabel, model),
+        provider: this.formatModelPickerProvider(value, pickerLabel, model),
         searchText: `${value} ${pickerLabel}`.trim()
       };
     });
+  }
+
+  toggleModelPicker(buttonEl, options, onChoose) {
+    if (this.modelPickerEl) {
+      this.closeModelPicker();
+      return;
+    }
+    this.modelPickerButtonEl = buttonEl;
+    this.modelPickerOptions = options;
+    this.modelPickerOnChoose = onChoose;
+    this.modelPickerQuery = "";
+    this.renderModelPicker();
+
+    const closeOnOutsidePointer = (event) => {
+      if (this.modelPickerEl?.contains(event.target) || buttonEl.contains(event.target)) return;
+      this.closeModelPicker();
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === "Escape") this.closeModelPicker();
+    };
+    document.addEventListener("mousedown", closeOnOutsidePointer, true);
+    document.addEventListener("keydown", closeOnEscape, true);
+    this.modelPickerCleanup = () => {
+      document.removeEventListener("mousedown", closeOnOutsidePointer, true);
+      document.removeEventListener("keydown", closeOnEscape, true);
+    };
+  }
+
+  closeModelPicker() {
+    this.modelPickerCleanup?.();
+    this.modelPickerCleanup = undefined;
+    this.modelPickerEl?.remove();
+    this.modelPickerEl = undefined;
+    this.modelPickerButtonEl = undefined;
+    this.modelPickerOptions = undefined;
+    this.modelPickerOnChoose = undefined;
+  }
+
+  renderModelPicker() {
+    const anchorEl = this.modelPickerButtonEl?.closest(".pi-agent-model-picker-anchor");
+    if (!anchorEl || !this.modelPickerOptions) return;
+
+    this.modelPickerEl?.remove();
+    const pickerEl = anchorEl.createDiv({ cls: "pi-agent-model-picker-popover" });
+    this.modelPickerEl = pickerEl;
+
+    const searchEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-search" });
+    setIcon(searchEl.createSpan(), "search");
+    const inputEl = searchEl.createEl("input", {
+      attr: { type: "text", placeholder: "Search 300+ models..." }
+    });
+    inputEl.value = this.modelPickerQuery;
+    inputEl.addEventListener("input", () => {
+      this.modelPickerQuery = inputEl.value;
+      this.populateModelPickerResults();
+    });
+
+    this.modelPickerResultsEl = pickerEl.createDiv({ cls: "pi-agent-model-picker-results" });
+    this.populateModelPickerResults();
+    window.setTimeout(() => inputEl.focus(), 0);
+  }
+
+  populateModelPickerResults() {
+    if (!this.modelPickerResultsEl || !this.modelPickerOptions) return;
+
+    this.modelPickerResultsEl.empty();
+    const query = this.modelPickerQuery.trim().toLowerCase();
+    const items = this.getModelPickerItems(this.modelPickerOptions).filter((item) =>
+      query ? item.searchText.toLowerCase().includes(query) : true
+    );
+    const favorites = items.filter((item) => this.isFavoriteModel(item.value));
+    const allModels = items.filter((item) => !this.isFavoriteModel(item.value));
+
+    if (favorites.length > 0) {
+      this.renderModelPickerSection("Favorites", favorites, true);
+      this.modelPickerResultsEl.createDiv({ cls: "pi-agent-model-picker-separator" });
+    }
+    this.renderModelPickerSection("All models", allModels, false);
+    if (items.length === 0) {
+      this.modelPickerResultsEl.createDiv({
+        cls: "pi-agent-model-picker-empty",
+        text: `No models match "${this.modelPickerQuery}".`
+      });
+    }
+  }
+
+  renderModelPickerSection(title, items, favoriteSection) {
+    if (!this.modelPickerResultsEl || items.length === 0) return;
+    const headingEl = this.modelPickerResultsEl.createDiv({ cls: "pi-agent-model-picker-heading" });
+    if (favoriteSection) setIcon(headingEl.createSpan(), "star");
+    headingEl.createSpan({ text: title });
+    for (const item of items) this.renderModelPickerRow(item);
+  }
+
+  renderModelPickerRow(item) {
+    if (!this.modelPickerResultsEl) return;
+    const selected = item.value === this.plugin.settings.model;
+    const favorite = this.isFavoriteModel(item.value);
+    const rowEl = this.modelPickerResultsEl.createDiv({
+      cls: `pi-agent-model-picker-row${selected ? " is-selected" : ""}`
+    });
+    setIcon(rowEl.createSpan({ cls: "pi-agent-model-picker-row-icon" }), "sparkles");
+    const textEl = rowEl.createDiv({ cls: "pi-agent-model-picker-row-text" });
+    textEl.createDiv({ cls: "pi-agent-model-picker-row-name", text: item.name });
+    textEl.createDiv({ cls: "pi-agent-model-picker-row-provider", text: item.provider });
+    if (selected) setIcon(rowEl.createSpan({ cls: "pi-agent-model-picker-check" }), "check");
+    const canFavorite = item.value && item.value !== CUSTOM_MODEL_VALUE;
+    if (canFavorite) {
+      const favoriteEl = rowEl.createEl("button", {
+        cls: `clickable-icon pi-agent-model-picker-favorite${favorite ? " is-favorite" : ""}`,
+        attr: { type: "button", title: favorite ? "Unfavorite model" : "Favorite model" }
+      });
+      setIcon(favoriteEl, "star");
+      favoriteEl.addEventListener("click", async (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        await this.toggleFavoriteModel(item.value);
+        this.populateModelPickerResults();
+      });
+    }
+    rowEl.addEventListener("click", () => this.modelPickerOnChoose?.(item.value));
+  }
+
+  isFavoriteModel(value) {
+    return this.plugin.isScopedModel?.(value) ?? false;
+  }
+
+  async toggleFavoriteModel(value) {
+    try {
+      await this.plugin.toggleScopedModel(value);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      new Notice(message);
+      console.warn("Pi Agent: failed to update scoped models", error);
+    }
   }
 
   getDefaultModelPickerLabel(label) {
@@ -210,7 +347,11 @@ export class RunSettingsControls {
       ? value === CUSTOM_MODEL_VALUE
         ? this.plugin.settings.customModel.trim() || this.formatDefaultModelLabel()
         : value
-          ? value
+          ? this.formatModelPickerName(
+              value,
+              label,
+              this.plugin.settings.availableModels.find((model) => model.slug === value)
+            )
           : this.formatDefaultModelLabel()
       : name === "Think"
         ? value
@@ -231,7 +372,22 @@ export class RunSettingsControls {
 
   formatDefaultModelLabel() {
     const model = this.plugin.settings.effectiveModel;
-    return model || "Pi default";
+    return model ? this.formatModelPickerName(model, model) : "Pi default";
+  }
+
+  formatModelPickerName(value, label, model) {
+    if (!value) return "Pi default";
+    if (value === CUSTOM_MODEL_VALUE) return this.plugin.settings.customModel.trim() || "Custom";
+    const slug = model?.slug ?? value;
+    return titleCaseModel(slug.split("/").pop() || label || value);
+  }
+
+  formatModelPickerProvider(value, label, model) {
+    if (!value) return this.plugin.settings.effectiveModel || "Use Pi default";
+    if (value === CUSTOM_MODEL_VALUE) return "Custom model ID";
+    const slug = model?.slug ?? value;
+    const parts = slug.split("/");
+    return titleCaseProvider(parts.length > 2 ? parts[1] : parts[0] || label);
   }
 
   formatDefaultReasoningLabel() {
@@ -274,38 +430,32 @@ export class RunSettingsControls {
   }
 }
 
-class ModelPickerModal extends FuzzySuggestModal {
-  constructor(app, items, selectedValue, onChoose) {
-    super(app);
-    this.items = items;
-    this.selectedValue = selectedValue;
-    this.onChoose = onChoose;
-    this.setPlaceholder("Search Pi models...");
-  }
+function titleCaseModel(value) {
+  return String(value || "")
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => {
+      const lower = part.toLowerCase();
+      return lower === "gpt"
+        ? "GPT"
+        : lower === "ai"
+          ? "AI"
+          : lower === "api"
+            ? "API"
+            : /^\d+(?:\.\d+)?$/.test(part)
+              ? part
+              : `${part.charAt(0).toUpperCase()}${part.slice(1)}`;
+    })
+    .join(" ");
+}
 
-  getItems() {
-    return this.items;
-  }
-
-  getItemText(item) {
-    return item.searchText;
-  }
-
-  renderSuggestion(item, el) {
-    const option = item.item;
-    el.createDiv({
-      cls: "pi-agent-model-picker-label",
-      text: option.value ? option.value : "Pi default"
-    });
-    if (option.label && option.label !== option.value) {
-      el.createDiv({ cls: "pi-agent-model-picker-detail", text: option.label });
-    }
-    if (option.value === this.selectedValue) {
-      el.addClass("is-selected");
-    }
-  }
-
-  async onChooseItem(item) {
-    await this.onChoose(item.value);
-  }
+function titleCaseProvider(value) {
+  const lower = String(value || "").toLowerCase();
+  return lower === "openai"
+    ? "OpenAI"
+    : lower === "anthropic"
+      ? "Anthropic"
+      : lower === "google"
+        ? "Google"
+        : titleCaseModel(value);
 }
