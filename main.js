@@ -4102,7 +4102,7 @@ var RunSettingsControls = class {
     this.populate(this.row);
   }
   populate(containerEl) {
-    this.addRunSetting(
+    this.addModelRunSetting(
       containerEl,
       "Model",
       "sparkles",
@@ -4158,17 +4158,48 @@ var RunSettingsControls = class {
       }
     );
   }
-  addRunSetting(containerEl, name, icon, options, value, onChange) {
-    const selectedValue =
-      Object.prototype.hasOwnProperty.call(options, value) || value ? value : "";
-    const selectedLabel = options[selectedValue] ?? value ?? "Default";
-    const displayLabel = this.formatRunSettingDisplayLabel(name, selectedValue, selectedLabel);
-    const buttonEl = containerEl.createEl("button", {
-      cls: `clickable-icon pi-agent-run-setting ${this.getRunSettingClass(name, selectedValue)}`,
-      attr: { "aria-label": `${name}: ${selectedLabel}`, title: `${name}: ${selectedLabel}` }
+  addModelRunSetting(containerEl, name, icon, options, value, onChange) {
+    const { selectedValue, selectedLabel, displayLabel } = this.getRunSettingLabels(
+      name,
+      options,
+      value
+    );
+    const buttonEl = this.createRunSettingButton(
+      containerEl,
+      name,
+      icon,
+      selectedValue,
+      selectedLabel,
+      displayLabel
+    );
+    buttonEl.addEventListener("click", async (event) => {
+      event.preventDefault();
+      const modal = new ModelPickerModal(
+        this.plugin.app,
+        this.getModelPickerItems(options),
+        selectedValue,
+        async (optionValue) => {
+          await onChange(optionValue);
+          this.refresh();
+        }
+      );
+      modal.open();
     });
-    (0, import_obsidian8.setIcon)(buttonEl, icon);
-    buttonEl.createSpan({ cls: "pi-agent-control-label", text: displayLabel });
+  }
+  addRunSetting(containerEl, name, icon, options, value, onChange) {
+    const { selectedValue, selectedLabel, displayLabel } = this.getRunSettingLabels(
+      name,
+      options,
+      value
+    );
+    const buttonEl = this.createRunSettingButton(
+      containerEl,
+      name,
+      icon,
+      selectedValue,
+      selectedLabel,
+      displayLabel
+    );
     buttonEl.addEventListener("click", async (event) => {
       event.preventDefault();
       const menu = new import_obsidian8.Menu();
@@ -4184,12 +4215,44 @@ var RunSettingsControls = class {
       menu.showAtMouseEvent(event);
     });
   }
+  getRunSettingLabels(name, options, value) {
+    const selectedValue =
+      Object.prototype.hasOwnProperty.call(options, value) || value ? value : "";
+    const selectedLabel = options[selectedValue] ?? value ?? "Default";
+    const displayLabel = this.formatRunSettingDisplayLabel(name, selectedValue, selectedLabel);
+    const titleLabel = name === "Model" ? displayLabel : selectedLabel;
+    return { selectedValue, selectedLabel: titleLabel, displayLabel };
+  }
+  createRunSettingButton(containerEl, name, icon, selectedValue, selectedLabel, displayLabel) {
+    const buttonEl = containerEl.createEl("button", {
+      cls: `clickable-icon pi-agent-run-setting ${this.getRunSettingClass(name, selectedValue)}`,
+      attr: { "aria-label": `${name}: ${selectedLabel}`, title: `${name}: ${selectedLabel}` }
+    });
+    (0, import_obsidian8.setIcon)(buttonEl, icon);
+    buttonEl.createSpan({ cls: "pi-agent-control-label", text: displayLabel });
+    return buttonEl;
+  }
+  getModelPickerItems(options) {
+    return Object.entries(options).map(([value, label]) => {
+      const pickerLabel = value ? label : this.getDefaultModelPickerLabel(label);
+      return {
+        value,
+        label: pickerLabel,
+        searchText: `${value} ${pickerLabel}`.trim()
+      };
+    });
+  }
+  getDefaultModelPickerLabel(label) {
+    return this.plugin.settings.effectiveModel
+      ? `${label} (${this.plugin.settings.effectiveModel})`
+      : label;
+  }
   formatRunSettingDisplayLabel(name, value, label) {
     return name === "Model"
       ? value === CUSTOM_MODEL_VALUE
-        ? this.plugin.settings.customModel.trim() || "Custom"
+        ? this.plugin.settings.customModel.trim() || this.formatDefaultModelLabel()
         : value
-          ? label.split(" - ")[0].replace(/^GPT-/i, "GPT-")
+          ? value
           : this.formatDefaultModelLabel()
       : name === "Think"
         ? value
@@ -4209,7 +4272,7 @@ var RunSettingsControls = class {
   }
   formatDefaultModelLabel() {
     const model = this.plugin.settings.effectiveModel;
-    return model ? model.split("/").pop() || model : "Default";
+    return model || "Pi default";
   }
   formatDefaultReasoningLabel() {
     const reasoning = this.plugin.settings.effectiveReasoning;
@@ -4236,13 +4299,46 @@ var RunSettingsControls = class {
       : "";
   }
   getRunSettingClass(name, value) {
-    return name === "Tools"
-      ? value === "full-agent"
-        ? "pi-agent-run-setting-mode-full"
-        : value === "edit" || value === "workspace-write"
-          ? "pi-agent-run-setting-mode-write"
-          : "pi-agent-run-setting-mode-read"
-      : "";
+    return name === "Model"
+      ? "pi-agent-run-setting-model"
+      : name === "Tools"
+        ? value === "full-agent"
+          ? "pi-agent-run-setting-mode-full"
+          : value === "edit" || value === "workspace-write"
+            ? "pi-agent-run-setting-mode-write"
+            : "pi-agent-run-setting-mode-read"
+        : "";
+  }
+};
+var ModelPickerModal = class extends import_obsidian8.FuzzySuggestModal {
+  constructor(app, items, selectedValue, onChoose) {
+    super(app);
+    this.items = items;
+    this.selectedValue = selectedValue;
+    this.onChoose = onChoose;
+    this.setPlaceholder("Search Pi models...");
+  }
+  getItems() {
+    return this.items;
+  }
+  getItemText(item) {
+    return item.searchText;
+  }
+  renderSuggestion(item, el) {
+    const option = item.item;
+    el.createDiv({
+      cls: "pi-agent-model-picker-label",
+      text: option.value ? option.value : "Pi default"
+    });
+    if (option.label && option.label !== option.value) {
+      el.createDiv({ cls: "pi-agent-model-picker-detail", text: option.label });
+    }
+    if (option.value === this.selectedValue) {
+      el.addClass("is-selected");
+    }
+  }
+  async onChooseItem(item) {
+    await this.onChoose(item.value);
   }
 };
 

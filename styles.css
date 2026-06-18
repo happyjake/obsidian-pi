@@ -146,6 +146,10 @@
   width: 15px;
 }
 
+.pi-agent-run-setting-model .pi-agent-control-label {
+  max-width: min(240px, 36vw);
+}
+
 .pi-agent-run-setting-speed-fast,
 .pi-agent-run-setting-speed-default,
 .pi-agent-run-setting-mode-read {
@@ -678,6 +682,22 @@
 }
 
 .pi-agent-suggest-detail {
+  color: var(--text-muted);
+  font-size: var(--font-ui-smaller);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pi-agent-model-picker-label {
+  color: var(--text-normal);
+  font-size: var(--font-ui-small);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pi-agent-model-picker-detail {
   color: var(--text-muted);
   font-size: var(--font-ui-smaller);
   overflow: hidden;
